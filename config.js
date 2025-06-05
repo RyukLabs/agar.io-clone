@@ -40,7 +40,7 @@ module.exports = {
     maxPortal: 15,
     slowBase: 4.5,
     logChat: 0,
-    networkUpdateFactor: 40,
+    networkUpdateFactor: 60,
     maxHeartbeatInterval: 600000,
     foodUniformDisposition: true,
     newPlayerInitialPosition: "farthest",

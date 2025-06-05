@@ -302,7 +302,9 @@ const tickGame = () => {
             map.players.removePlayerByIndex(gotEaten.playerIndex);
         }
     });
-
+    
+    // Update spatial grid after all game logic to ensure it's current
+    map.updateSpatialGrid();
 };
 
 const calculateLeaderboard = () => {
@@ -332,9 +334,6 @@ const gameloop = () => {
     
     // Update portals with timing logic
     map.updatePortals(config);
-    
-    // Update spatial grid for optimized entity lookups
-    map.updateSpatialGrid();
 };
 
 const sendUpdates = () => {
