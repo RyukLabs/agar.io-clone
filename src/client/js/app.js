@@ -472,7 +472,8 @@ function gameLoop() {
                         name: users[i].name,
                         radius: users[i].cells[j].radius,
                         x: users[i].cells[j].x,
-                        y: users[i].cells[j].y
+                        y: users[i].cells[j].y,
+                        isPrimary: users[i].cells[j].isPrimary
                     });
                 }
             }
@@ -545,7 +546,8 @@ function gameLoop() {
                         name: visibleUsers[i].name,
                         radius: visibleUsers[i].cells[j].radius,
                         x: visibleUsers[i].cells[j].x - player.x + global.screen.width / 2,
-                        y: visibleUsers[i].cells[j].y - player.y + global.screen.height / 2
+                        y: visibleUsers[i].cells[j].y - player.y + global.screen.height / 2,
+                        isPrimary: visibleUsers[i].cells[j].isPrimary
                     });
                 }
             }

@@ -12,12 +12,13 @@ const PUSHING_AWAY_SPEED = 1.1;
 const MERGE_TIMER = 15;
 
 class Cell {
-    constructor(x, y, mass, speed) {
+    constructor(x, y, mass, speed, isPrimary = false) {
         this.x = x;
         this.y = y;
         this.mass = mass;
         this.radius = util.massToRadius(mass);
         this.speed = speed;
+        this.isPrimary = isPrimary;
     }
 
     setMass(mass) {
@@ -96,7 +97,7 @@ exports.Player = class {
 
     /* Initalizes things that change with every respawn */
     init(position, defaultPlayerMass) {
-        this.cells = [new Cell(position.x, position.y, defaultPlayerMass, MIN_SPEED)];
+        this.cells = [new Cell(position.x, position.y, defaultPlayerMass, MIN_SPEED, true)];
         this.massTotal = defaultPlayerMass;
         this.x = position.x;
         this.y = position.y;
@@ -210,8 +211,20 @@ exports.Player = class {
 
     mergeCollidingCells() {
         this.enumerateCollidingCells(function (cells, cellAIndex, cellBIndex) {
-            cells[cellAIndex].addMass(cells[cellBIndex].mass);
-            cells[cellBIndex] = null;
+            // If one of the cells is primary, make sure it survives the merge
+            if (cells[cellBIndex].isPrimary && !cells[cellAIndex].isPrimary) {
+                // cellB is primary, so merge cellA into cellB
+                cells[cellBIndex].addMass(cells[cellAIndex].mass);
+                cells[cellAIndex] = null;
+            } else {
+                // Default behavior: merge cellB into cellA
+                // If cellA is primary or both are primary, cellA survives
+                cells[cellAIndex].addMass(cells[cellBIndex].mass);
+                if (cells[cellBIndex].isPrimary) {
+                    cells[cellAIndex].isPrimary = true; // Transfer primary status
+                }
+                cells[cellBIndex] = null;
+            }
         });
     }
 

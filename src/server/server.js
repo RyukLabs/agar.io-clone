@@ -243,7 +243,7 @@ const tickPlayer = (currentPlayer) => {
     }
 
     const cellsToSplit = [];
-    let playerTouchedPortal = false;
+    let shouldPlayerDie = false;
 
     for (let cellIndex = 0; cellIndex < currentPlayer.cells.length; cellIndex++) {
         const currentCell = currentPlayer.cells[cellIndex];
@@ -262,7 +262,14 @@ const tickPlayer = (currentPlayer) => {
         }
 
         if (touchedPortalIndexes.length > 0) {
-            playerTouchedPortal = true;
+            // Portal collision logic:
+            // - If player has only 1 cell: die instantly
+            // - If player has multiple cells: only die if primary cell touches portal
+            if (currentPlayer.cells.length === 1) {
+                shouldPlayerDie = true;
+            } else if (currentCell.isPrimary) {
+                shouldPlayerDie = true;
+            }
             // Don't remove portals when touched - they remain for other players
         }
 
@@ -277,7 +284,7 @@ const tickPlayer = (currentPlayer) => {
     currentPlayer.virusSplit(cellsToSplit, config.limitSplit, config.defaultPlayerMass);
 
     // Handle portal death
-    if (playerTouchedPortal) {
+    if (shouldPlayerDie) {
         console.log('[INFO] Player ' + currentPlayer.name + ' died by touching an active portal');
         sockets[currentPlayer.id].emit('RIP');
         map.players.removePlayerByID(currentPlayer.id);

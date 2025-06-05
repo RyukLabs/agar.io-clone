@@ -136,6 +136,9 @@ const drawCellWithLines = (cell, borders, graph) => {
 }
 
 const drawCells = (cells, playerConfig, toggleMassState, borders, graph) => {
+    // Check if player is in split mode (has multiple cells)
+    const isInSplitMode = cells.length > 1;
+    
     for (let cell of cells) {
         // Draw the cell itself
         graph.fillStyle = cell.color;
@@ -147,6 +150,15 @@ const drawCells = (cells, playerConfig, toggleMassState, borders, graph) => {
         } else {
             // Border corrections are not needed, the cell can be drawn as a circle
             drawRoundObject(cell, cell.radius, graph);
+        }
+
+        // Draw primary cell indicator (black border) when in split mode
+        if (isInSplitMode && cell.isPrimary) {
+            graph.strokeStyle = '#000000';
+            graph.lineWidth = Math.max(cell.radius * 0.08, 3);
+            graph.beginPath();
+            graph.arc(cell.x, cell.y, cell.radius + graph.lineWidth / 2, 0, 2 * Math.PI);
+            graph.stroke();
         }
 
         // Draw the name of the player
