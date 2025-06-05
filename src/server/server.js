@@ -252,7 +252,9 @@ const tickPlayer = (currentPlayer) => {
         const eatenFoodIndexes = util.getIndexes(map.food.data, food => isEntityInsideCircle(food, cellCircle));
         const eatenMassIndexes = util.getIndexes(map.massFood.data, mass => canEatMass(currentCell, cellCircle, cellIndex, mass));
         const eatenVirusIndexes = util.getIndexes(map.viruses.data, virus => canEatVirus(currentCell, cellCircle, virus));
-        const touchedPortalIndexes = util.getIndexes(map.portals.data, portal => touchesPortal(currentCell, cellCircle, portal));
+        
+        // Only check collision with active (deadly) portals
+        const touchedPortalIndexes = util.getIndexes(map.portals.getActivePortals(), portal => touchesPortal(currentCell, cellCircle, portal));
 
         if (eatenVirusIndexes.length > 0) {
             cellsToSplit.push(cellIndex);
@@ -276,7 +278,7 @@ const tickPlayer = (currentPlayer) => {
 
     // Handle portal death
     if (playerTouchedPortal) {
-        console.log('[INFO] Player ' + currentPlayer.name + ' died by touching a portal');
+        console.log('[INFO] Player ' + currentPlayer.name + ' died by touching an active portal');
         sockets[currentPlayer.id].emit('RIP');
         map.players.removePlayerByID(currentPlayer.id);
         io.emit('playerDied', { name: currentPlayer.name });
@@ -328,13 +330,24 @@ const gameloop = () => {
 
     map.balanceMass(config.foodMass, config.gameMass, config.maxFood, config.maxVirus, config.maxPortal);
     
+    // Update portals with timing logic
+    map.updatePortals(config);
+    
     // Update spatial grid for optimized entity lookups
     map.updateSpatialGrid();
 };
 
 const sendUpdates = () => {
     spectators.forEach(updateSpectator);
+    // console.log('[DEBUG] Sending updates to', map.players.data.length, 'players');
+    
     map.enumerateWhatPlayersSee(function (playerData, visiblePlayers, visibleFood, visibleMass, visibleViruses, visiblePortals) {
+        // Debug portal data being sent
+        console.log('[DEBUG] Player', playerData.name, 'should see', visiblePortals.length, 'portals');
+        if (visiblePortals && visiblePortals.length > 0) {
+            console.log('[DEBUG] Sending', visiblePortals.length, 'portals to player', playerData.name, 'Portal data:', visiblePortals);
+        }
+        
         sockets[playerData.id].emit('serverTellPlayerMove', playerData, visiblePlayers, visibleFood, visibleMass, visibleViruses, visiblePortals);
         
         if (leaderboardChanged) {
@@ -361,7 +374,12 @@ const updateSpectator = (socketID) => {
         id: socketID,
         name: ''
     };
-    sockets[socketID].emit('serverTellPlayerMove', playerData, map.players.data, map.food.data, map.massFood.data, map.viruses.data);
+    
+    // Get visible portals for spectators
+    const visiblePortals = map.portals.getVisiblePortals();
+    // console.log('[DEBUG] Sending', visiblePortals.length, 'portals to spectator');
+    
+    sockets[socketID].emit('serverTellPlayerMove', playerData, map.players.data, map.food.data, map.massFood.data, map.viruses.data, visiblePortals);
     if (leaderboardChanged) {
         sendLeaderboard(sockets[socketID]);
     }

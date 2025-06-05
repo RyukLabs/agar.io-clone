@@ -37,31 +37,58 @@ const drawVirus = (position, virus, graph) => {
 const drawPortal = (position, portal, graph) => {
     graph.save();
     
-    // Create a glowing effect
-    graph.shadowColor = portal.fill;
-    graph.shadowBlur = 30;
+    // Apply opacity based on portal state
+    graph.globalAlpha = portal.opacity || 1.0;
+    
+    // Create different effects based on state
+    if (portal.state === 'warning') {
+        // Warning state - subtle glow, pulsing
+        graph.shadowColor = portal.fill;
+        graph.shadowBlur = 15;
+    } else if (portal.state === 'active') {
+        // Active state - strong glow, more dangerous appearance
+        graph.shadowColor = portal.fill;
+        graph.shadowBlur = 40;
+    }
     
     graph.strokeStyle = portal.stroke;
     graph.fillStyle = portal.fill;
     graph.lineWidth = portal.strokeWidth;
 
-    // Draw portal with a special pulsing effect
-    const pulseRadius = portal.radius + Math.sin(Date.now() * 0.005) * 5;
+    // Pulsing effect - more intense when active
+    const pulseIntensity = portal.state === 'active' ? 8 : 3;
+    const pulseSpeed = portal.state === 'active' ? 0.008 : 0.005;
+    const pulseRadius = portal.radius + Math.sin(Date.now() * pulseSpeed) * pulseIntensity;
     
-    // Draw outer glow
-    graph.beginPath();
-    graph.arc(position.x, position.y, pulseRadius + 10, 0, 2 * Math.PI);
-    graph.fillStyle = portal.fill + '30'; // Semi-transparent
-    graph.fill();
+    // Draw outer glow (stronger when active)
+    if (portal.state === 'active') {
+        graph.beginPath();
+        graph.arc(position.x, position.y, pulseRadius + 15, 0, 2 * Math.PI);
+        graph.fillStyle = portal.fill + '40'; // More visible glow
+        graph.fill();
+    } else if (portal.state === 'warning') {
+        graph.beginPath();
+        graph.arc(position.x, position.y, pulseRadius + 8, 0, 2 * Math.PI);
+        graph.fillStyle = portal.fill + '20'; // Subtle glow
+        graph.fill();
+    }
     
     // Draw main portal body
-    drawCircle(position, pulseRadius, 12, graph); // 12 sides for more dangerous look
+    graph.fillStyle = portal.fill;
+    drawCircle(position, pulseRadius, 12, graph);
     
-    // Draw inner dark core
-    graph.fillStyle = '#000000';
-    graph.beginPath();
-    graph.arc(position.x, position.y, pulseRadius * 0.4, 0, 2 * Math.PI);
-    graph.fill();
+    // Draw inner core - black when active, gray when warning
+    if (portal.state === 'active') {
+        graph.fillStyle = '#000000';
+        graph.beginPath();
+        graph.arc(position.x, position.y, pulseRadius * 0.4, 0, 2 * Math.PI);
+        graph.fill();
+    } else if (portal.state === 'warning') {
+        graph.fillStyle = '#444444';
+        graph.beginPath();
+        graph.arc(position.x, position.y, pulseRadius * 0.3, 0, 2 * Math.PI);
+        graph.fill();
+    }
     
     graph.restore();
 }
@@ -186,6 +213,38 @@ const drawErrorMessage = (message, graph, screen) => {
     graph.fillText(message, screen.width / 2, screen.height / 2);
 }
 
+const drawMapBorders = (mapWidth, mapHeight, graph) => {
+    graph.strokeStyle = '#ffffff';
+    graph.lineWidth = 10;
+    graph.beginPath();
+    graph.rect(0, 0, mapWidth, mapHeight);
+    graph.stroke();
+    
+    // Add a subtle background for the map area
+    graph.fillStyle = 'rgba(255, 255, 255, 0.02)';
+    graph.fillRect(0, 0, mapWidth, mapHeight);
+};
+
+const drawSpectatorUI = (spectatorZoom, portals, graph) => {
+    // Draw zoom indicator
+    graph.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    graph.fillRect(10, 10, 200, 80);
+    
+    graph.strokeStyle = '#ffffff';
+    graph.lineWidth = 2;
+    graph.strokeRect(10, 10, 200, 80);
+    
+    graph.fillStyle = '#ffffff';
+    graph.font = '14px Arial';
+    graph.textAlign = 'left';
+    graph.fillText('Zoom: ' + (spectatorZoom.scale * 100).toFixed(0) + '%', 20, 30);
+    graph.fillText('Mouse wheel: Zoom', 20, 45);
+    graph.fillText('Click & drag: Pan', 20, 60);
+    
+    // Show portal count or wave status
+    graph.fillText('Portals: ' + (portals?.length || 0), 20, 75);
+};
+
 module.exports = {
     drawFood,
     drawVirus,
@@ -194,5 +253,7 @@ module.exports = {
     drawCells,
     drawErrorMessage,
     drawGrid,
-    drawBorder
+    drawBorder,
+    drawMapBorders,
+    drawSpectatorUI
 };

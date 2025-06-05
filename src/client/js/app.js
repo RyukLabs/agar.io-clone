@@ -112,12 +112,25 @@ var player = {
 };
 global.player = player;
 
+// Spectator zoom functionality
+var spectatorZoom = {
+    scale: 1.0,
+    minScale: 0.1,  // 10x zoom out to see whole map
+    maxScale: 2.0,  // 2x zoom in
+    x: 0,           // Camera position
+    y: 0,
+    mapWidth: 5000, // Will be set from server
+    mapHeight: 5000 // Will be set from server
+};
+global.spectatorZoom = spectatorZoom;
+
 var foods = [];
 var viruses = [];
 var fireFood = [];
 var users = [];
 var leaderboard = [];
 var portals = [];
+global.portals = portals;
 var target = { x: player.x, y: player.y };
 global.target = target;
 
@@ -188,7 +201,75 @@ function setupSocket(socket) {
         c.focus();
         global.game.width = gameSizes.width;
         global.game.height = gameSizes.height;
+        
+        // Set spectator zoom map dimensions
+        spectatorZoom.mapWidth = gameSizes.width;
+        spectatorZoom.mapHeight = gameSizes.height;
+        
+        // For spectators, center the camera on the map
+        if (global.playerType === 'spectator') {
+            // Position camera at map center
+            spectatorZoom.x = gameSizes.width / 2;  // 2500 for a 5000x5000 map
+            spectatorZoom.y = gameSizes.height / 2; // 2500 for a 5000x5000 map
+            
+            // Set initial zoom to fit the full map with padding
+            const mapToScreenRatioX = global.screen.width / gameSizes.width;
+            const mapToScreenRatioY = global.screen.height / gameSizes.height;
+            spectatorZoom.scale = Math.min(mapToScreenRatioX, mapToScreenRatioY) * 0.9; // 90% to fit map with padding
+            
+            console.log('[SPECTATOR DEBUG] Full map view - Camera:', spectatorZoom.x, spectatorZoom.y, 'Scale:', spectatorZoom.scale);
+            console.log('[SPECTATOR DEBUG] Map size:', gameSizes.width, 'x', gameSizes.height);
+            console.log('[SPECTATOR DEBUG] Screen size:', global.screen.width, 'x', global.screen.height);
+        }
+        
         resize();
+    });
+
+    // Simple zoom for spectators
+    c.addEventListener('wheel', function(e) {
+        if (global.playerType === 'spectator') {
+            e.preventDefault();
+            const zoomFactor = 1.1;
+            
+            if (e.deltaY < 0) {
+                spectatorZoom.scale = Math.min(spectatorZoom.scale * zoomFactor, spectatorZoom.maxScale);
+            } else {
+                spectatorZoom.scale = Math.max(spectatorZoom.scale / zoomFactor, spectatorZoom.minScale);
+            }
+        }
+    });
+
+    // Simple drag for spectators
+    let isDragging = false;
+    let lastMouseX = 0;
+    let lastMouseY = 0;
+    
+    c.addEventListener('mousedown', function(e) {
+        if (global.playerType === 'spectator') {
+            isDragging = true;
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+        }
+    });
+    
+    c.addEventListener('mousemove', function(e) {
+        if (global.playerType === 'spectator' && isDragging) {
+            const deltaX = e.clientX - lastMouseX;
+            const deltaY = e.clientY - lastMouseY;
+            
+            // Scale the drag movement according to zoom level
+            spectatorZoom.x -= deltaX / spectatorZoom.scale;
+            spectatorZoom.y -= deltaY / spectatorZoom.scale;
+            
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+        }
+    });
+    
+    c.addEventListener('mouseup', function(e) {
+        if (global.playerType === 'spectator') {
+            isDragging = false;
+        }
     });
 
     socket.on('playerDied', (data) => {
@@ -251,6 +332,11 @@ function setupSocket(socket) {
         viruses = virusList;
         fireFood = massList;
         portals = portalsList || []; // Default to empty array if undefined
+        
+        // Debug portal data received
+        if (portals.length > 0) {
+            console.log('[CLIENT DEBUG] Received', portals.length, 'portals');
+        }
     });
 
     // Death.
@@ -326,71 +412,157 @@ function gameLoop() {
         graph.fillStyle = global.backgroundColor;
         graph.fillRect(0, 0, global.screen.width, global.screen.height);
 
-        render.drawGrid(global, player, global.screen, graph);
+        // Set up spectator rendering
+        if (global.playerType === 'spectator') {
+            graph.save();
+            
+            // Center the map in the screen - use actual canvas dimensions
+            const actualScreenCenterX = c.width / 2;
+            const actualScreenCenterY = c.height / 2;
+            const offsetX = actualScreenCenterX - spectatorZoom.x * spectatorZoom.scale;
+            const offsetY = actualScreenCenterY - spectatorZoom.y * spectatorZoom.scale;
+            
+            console.log('[RENDER DEBUG] Canvas dimensions:', c.width, c.height);
+            console.log('[RENDER DEBUG] Actual screen center:', actualScreenCenterX, actualScreenCenterY);
+            console.log('[RENDER DEBUG] Camera scaled:', spectatorZoom.x * spectatorZoom.scale, spectatorZoom.y * spectatorZoom.scale);
+            console.log('[RENDER DEBUG] Offsets:', offsetX, offsetY);
+            
+            graph.translate(offsetX, offsetY);
+            graph.scale(spectatorZoom.scale, spectatorZoom.scale);
+            
+            // Draw grid at world coordinates
+            render.drawGrid(global, {x: 0, y: 0}, {width: spectatorZoom.mapWidth, height: spectatorZoom.mapHeight}, graph);
 
-        // Apply viewport culling
-        const visibleFood = foods.filter(food => isInViewport(food, player, global.screen));
-        const visibleFireFood = fireFood.filter(food => isInViewport(food, player, global.screen));
-        const visibleViruses = viruses.filter(virus => isInViewport(virus, player, global.screen));
-        const visiblePortals = portals.filter(portal => isInViewport(portal, player, global.screen));
-        const visibleUsers = users.filter(user => isInViewport(user, player, global.screen));
+            // Show all entities at their world coordinates
+            foods.forEach(food => {
+                render.drawFood({x: food.x, y: food.y}, food, graph);
+            });
 
-        // Render only visible entities
-        visibleFood.forEach(food => {
-            let position = getPosition(food, player, global.screen);
-            render.drawFood(position, food, graph);
-        });
+            fireFood.forEach(fireFood => {
+                render.drawFireFood({x: fireFood.x, y: fireFood.y}, fireFood, playerConfig, graph);
+            });
 
-        visibleFireFood.forEach(fireFood => {
-            let position = getPosition(fireFood, player, global.screen);
-            render.drawFireFood(position, fireFood, playerConfig, graph);
-        });
+            viruses.forEach(virus => {
+                render.drawVirus({x: virus.x, y: virus.y}, virus, graph);
+            });
 
-        visibleViruses.forEach(virus => {
-            let position = getPosition(virus, player, global.screen);
-            render.drawVirus(position, virus, graph);
-        });
+            portals.forEach(portal => {
+                render.drawPortal({x: portal.x, y: portal.y}, portal, graph);
+            });
 
-        visiblePortals.forEach(portal => {
-            let position = getPosition(portal, player, global.screen);
-            render.drawPortal(position, portal, graph);
-        });
+            // Draw map borders
+            graph.strokeStyle = '#ffffff';
+            graph.lineWidth = 10;
+            graph.beginPath();
+            graph.rect(0, 0, spectatorZoom.mapWidth, spectatorZoom.mapHeight);
+            graph.stroke();
 
-        let borders = {
-            left: global.screen.width / 2 - player.x,
-            right: global.screen.width / 2 + global.game.width - player.x,
-            top: global.screen.height / 2 - player.y,
-            bottom: global.screen.height / 2 + global.game.height - player.y
-        }
-
-        if (global.borderDraw) {
-            render.drawBorder(borders, graph);
-        }
-
-        var cellsToDraw = [];
-        for (var i = 0; i < visibleUsers.length; i++) {
-            let color = 'hsl(' + visibleUsers[i].hue + ', 100%, 50%)';
-            let borderColor = 'hsl(' + visibleUsers[i].hue + ', 100%, 45%)';
-            for (var j = 0; j < visibleUsers[i].cells.length; j++) {
-                cellsToDraw.push({
-                    color: color,
-                    borderColor: borderColor,
-                    mass: visibleUsers[i].cells[j].mass,
-                    name: visibleUsers[i].name,
-                    radius: visibleUsers[i].cells[j].radius,
-                    x: visibleUsers[i].cells[j].x - player.x + global.screen.width / 2,
-                    y: visibleUsers[i].cells[j].y - player.y + global.screen.height / 2
-                });
+            // Draw player cells
+            var cellsToDraw = [];
+            for (var i = 0; i < users.length; i++) {
+                let color = 'hsl(' + users[i].hue + ', 100%, 50%)';
+                let borderColor = 'hsl(' + users[i].hue + ', 100%, 45%)';
+                for (var j = 0; j < users[i].cells.length; j++) {
+                    cellsToDraw.push({
+                        color: color,
+                        borderColor: borderColor,
+                        mass: users[i].cells[j].mass,
+                        name: users[i].name,
+                        radius: users[i].cells[j].radius,
+                        x: users[i].cells[j].x,
+                        y: users[i].cells[j].y
+                    });
+                }
             }
+
+            cellsToDraw.sort(function (obj1, obj2) {
+                return obj1.mass - obj2.mass;
+            });
+
+            cellsToDraw.forEach(cell => {
+                render.drawCell(cell, playerConfig, global.toggleMassState, graph);
+            });
+            
+            graph.restore();
+            
+            // Draw zoom UI on top of the transformed view
+            render.drawSpectatorUI(spectatorZoom, portals, graph);
+            
+        } else {
+            // Regular player view
+            render.drawGrid(global, player, global.screen, graph);
+
+            // Apply viewport culling
+            const visibleFood = foods.filter(food => isInViewport(food, player, global.screen));
+            const visibleFireFood = fireFood.filter(food => isInViewport(food, player, global.screen));
+            const visibleViruses = viruses.filter(virus => isInViewport(virus, player, global.screen));
+            const visiblePortals = portals; // Temporarily disable viewport culling for portals
+            const visibleUsers = users.filter(user => isInViewport(user, player, global.screen));
+
+            // Debug portal visibility (reduced logging)
+            if (portals.length > 0 && visiblePortals.length !== portals.length) {
+                console.log('[CLIENT DEBUG] Portal visibility: Total:', portals.length, 'Visible:', visiblePortals.length);
+            }
+
+            // Render only visible entities
+            visibleFood.forEach(food => {
+                let position = getPosition(food, player, global.screen);
+                render.drawFood(position, food, graph);
+            });
+
+            visibleFireFood.forEach(fireFood => {
+                let position = getPosition(fireFood, player, global.screen);
+                render.drawFireFood(position, fireFood, playerConfig, graph);
+            });
+
+            visibleViruses.forEach(virus => {
+                let position = getPosition(virus, player, global.screen);
+                render.drawVirus(position, virus, graph);
+            });
+
+            visiblePortals.forEach(portal => {
+                let position = getPosition(portal, player, global.screen);
+                render.drawPortal(position, portal, graph);
+            });
+
+            let borders = {
+                left: global.screen.width / 2 - player.x,
+                right: global.screen.width / 2 + global.game.width - player.x,
+                top: global.screen.height / 2 - player.y,
+                bottom: global.screen.height / 2 + global.game.height - player.y
+            }
+
+            if (global.borderDraw) {
+                render.drawBorder(borders, graph);
+            }
+
+            var cellsToDraw = [];
+            for (var i = 0; i < visibleUsers.length; i++) {
+                let color = 'hsl(' + visibleUsers[i].hue + ', 100%, 50%)';
+                let borderColor = 'hsl(' + visibleUsers[i].hue + ', 100%, 45%)';
+                for (var j = 0; j < visibleUsers[i].cells.length; j++) {
+                    cellsToDraw.push({
+                        color: color,
+                        borderColor: borderColor,
+                        mass: visibleUsers[i].cells[j].mass,
+                        name: visibleUsers[i].name,
+                        radius: visibleUsers[i].cells[j].radius,
+                        x: visibleUsers[i].cells[j].x - player.x + global.screen.width / 2,
+                        y: visibleUsers[i].cells[j].y - player.y + global.screen.height / 2
+                    });
+                }
+            }
+
+            cellsToDraw.sort(function (obj1, obj2) {
+                return obj1.mass - obj2.mass;
+            });
+
+            render.drawCells(cellsToDraw, playerConfig, global.toggleMassState, borders, graph);
         }
 
-        cellsToDraw.sort(function (obj1, obj2) {
-            return obj1.mass - obj2.mass;
-        });
-
-        render.drawCells(cellsToDraw, playerConfig, global.toggleMassState, borders, graph);
-
-        socket.emit('0', window.canvas.target);
+        if (global.playerType === 'player') {
+            socket.emit('0', window.canvas.target);
+        }
     }
 }
 
@@ -399,8 +571,9 @@ window.addEventListener('resize', resize);
 function resize() {
     if (!socket) return;
 
-    player.screenWidth = c.width = global.screen.width = global.playerType == 'player' ? window.innerWidth : global.game.width;
-    player.screenHeight = c.height = global.screen.height = global.playerType == 'player' ? window.innerHeight : global.game.height;
+    // Canvas size should always match window size for both players and spectators
+    player.screenWidth = c.width = global.screen.width = window.innerWidth;
+    player.screenHeight = c.height = global.screen.height = window.innerHeight;
 
     if (global.playerType == 'spectator') {
         player.x = global.game.width / 2;

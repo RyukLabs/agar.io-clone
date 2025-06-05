@@ -26,10 +26,10 @@ module.exports = {
             to: 108
         },
         uniformDisposition: false,
-        spawnInterval: 10000,
+        waveSpawnInterval: 10000,
         warningDuration: 3000,
         activeDuration: 5000,
-        maxSimultaneous: 3,
+        maxSimultaneous: 10,
     },
     gameWidth: 5000,
     gameHeight: 5000,

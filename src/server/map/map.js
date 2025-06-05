@@ -85,17 +85,13 @@ exports.Map = class {
             console.debug('[DEBUG] Removing ' + -foodDiff + ' food');
             this.food.removeExcess(-foodDiff);
         }
-        //console.debug('[DEBUG] Mass rebalanced!');
 
         const virusesToAdd = maxVirus - this.viruses.data.length;
         if (virusesToAdd > 0) {
             this.viruses.addNew(virusesToAdd);
         }
 
-        const portalsToAdd = maxPortal - this.portals.data.length;
-        if (portalsToAdd > 0) {
-            this.portals.addNew(portalsToAdd, require('../../../config'));
-        }
+        // Portals are now handled by their own timing system in updatePortals()
     }
 
     enumerateWhatPlayersSee(callback) {
@@ -112,8 +108,14 @@ exports.Map = class {
             var visibleMass = Array.from(nearbyEntities)
                 .filter(entity => entity.type === 'mass' && isVisibleEntity(entity, currentPlayer));
 
-            var visiblePortals = Array.from(nearbyEntities)
-                .filter(entity => entity.type === 'portal' && isVisibleEntity(entity, currentPlayer));
+            // Get visible portals with their state information
+            var allVisiblePortals = this.portals.getVisiblePortals();
+            console.log('[DEBUG] All visible portals from manager:', allVisiblePortals.length);
+            
+            // Bypass isVisibleEntity for now since portals should be visible globally
+            var visiblePortals = allVisiblePortals;
+            
+            console.log('[DEBUG] Visible portals after filter:', visiblePortals.length);
 
             const extractData = (player) => {
                 return {
@@ -161,9 +163,16 @@ exports.Map = class {
             this.spatialGrid.insert(mass);
         });
 
-        this.portals.data.forEach(portal => {
+        // Only add visible portals to spatial grid
+        const visiblePortals = this.portals.getVisiblePortals();
+        console.log('[DEBUG] Adding', visiblePortals.length, 'visible portals to spatial grid');
+        visiblePortals.forEach(portal => {
             portal.type = 'portal';
             this.spatialGrid.insert(portal);
         });
+    }
+
+    updatePortals(config) {
+        this.portals.update(config);
     }
 }
