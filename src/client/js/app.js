@@ -217,9 +217,7 @@ function setupSocket(socket) {
             const mapToScreenRatioY = global.screen.height / gameSizes.height;
             spectatorZoom.scale = Math.min(mapToScreenRatioX, mapToScreenRatioY) * 0.9; // 90% to fit map with padding
             
-            console.log('[SPECTATOR DEBUG] Full map view - Camera:', spectatorZoom.x, spectatorZoom.y, 'Scale:', spectatorZoom.scale);
-            console.log('[SPECTATOR DEBUG] Map size:', gameSizes.width, 'x', gameSizes.height);
-            console.log('[SPECTATOR DEBUG] Screen size:', global.screen.width, 'x', global.screen.height);
+
         }
         
         resize();
@@ -333,10 +331,7 @@ function setupSocket(socket) {
         fireFood = massList;
         portals = portalsList || []; // Default to empty array if undefined
         
-        // Debug portal data received
-        if (portals.length > 0) {
-            console.log('[CLIENT DEBUG] Received', portals.length, 'portals');
-        }
+
     });
 
     // Death.
@@ -422,32 +417,39 @@ function gameLoop() {
             const offsetX = actualScreenCenterX - spectatorZoom.x * spectatorZoom.scale;
             const offsetY = actualScreenCenterY - spectatorZoom.y * spectatorZoom.scale;
             
-            console.log('[RENDER DEBUG] Canvas dimensions:', c.width, c.height);
-            console.log('[RENDER DEBUG] Actual screen center:', actualScreenCenterX, actualScreenCenterY);
-            console.log('[RENDER DEBUG] Camera scaled:', spectatorZoom.x * spectatorZoom.scale, spectatorZoom.y * spectatorZoom.scale);
-            console.log('[RENDER DEBUG] Offsets:', offsetX, offsetY);
-            
             graph.translate(offsetX, offsetY);
             graph.scale(spectatorZoom.scale, spectatorZoom.scale);
             
-            // Draw grid at world coordinates
-            render.drawGrid(global, {x: 0, y: 0}, {width: spectatorZoom.mapWidth, height: spectatorZoom.mapHeight}, graph);
+            // Skip grid for spectators - it creates unwanted visual noise
 
-            // Show all entities at their world coordinates
+            // Show all entities at their world coordinates (with bounds checking)
             foods.forEach(food => {
-                render.drawFood({x: food.x, y: food.y}, food, graph);
+                // Only render food within map bounds
+                if (food.x >= 0 && food.x <= spectatorZoom.mapWidth && 
+                    food.y >= 0 && food.y <= spectatorZoom.mapHeight) {
+                    render.drawFood({x: food.x, y: food.y}, food, graph);
+                }
             });
 
             fireFood.forEach(fireFood => {
-                render.drawFireFood({x: fireFood.x, y: fireFood.y}, fireFood, playerConfig, graph);
+                if (fireFood.x >= 0 && fireFood.x <= spectatorZoom.mapWidth && 
+                    fireFood.y >= 0 && fireFood.y <= spectatorZoom.mapHeight) {
+                    render.drawFireFood({x: fireFood.x, y: fireFood.y}, fireFood, playerConfig, graph);
+                }
             });
 
             viruses.forEach(virus => {
-                render.drawVirus({x: virus.x, y: virus.y}, virus, graph);
+                if (virus.x >= 0 && virus.x <= spectatorZoom.mapWidth && 
+                    virus.y >= 0 && virus.y <= spectatorZoom.mapHeight) {
+                    render.drawVirus({x: virus.x, y: virus.y}, virus, graph);
+                }
             });
 
             portals.forEach(portal => {
-                render.drawPortal({x: portal.x, y: portal.y}, portal, graph);
+                if (portal.x >= 0 && portal.x <= spectatorZoom.mapWidth && 
+                    portal.y >= 0 && portal.y <= spectatorZoom.mapHeight) {
+                    render.drawPortal({x: portal.x, y: portal.y}, portal, graph);
+                }
             });
 
             // Draw map borders
@@ -479,9 +481,7 @@ function gameLoop() {
                 return obj1.mass - obj2.mass;
             });
 
-            cellsToDraw.forEach(cell => {
-                render.drawCell(cell, playerConfig, global.toggleMassState, graph);
-            });
+            render.drawCells(cellsToDraw, playerConfig, global.toggleMassState, {}, graph);
             
             graph.restore();
             
@@ -499,10 +499,7 @@ function gameLoop() {
             const visiblePortals = portals; // Temporarily disable viewport culling for portals
             const visibleUsers = users.filter(user => isInViewport(user, player, global.screen));
 
-            // Debug portal visibility (reduced logging)
-            if (portals.length > 0 && visiblePortals.length !== portals.length) {
-                console.log('[CLIENT DEBUG] Portal visibility: Total:', portals.length, 'Visible:', visiblePortals.length);
-            }
+
 
             // Render only visible entities
             visibleFood.forEach(food => {

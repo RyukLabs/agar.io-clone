@@ -110,12 +110,12 @@ exports.Map = class {
 
             // Get visible portals with their state information
             var allVisiblePortals = this.portals.getVisiblePortals();
-            console.log('[DEBUG] All visible portals from manager:', allVisiblePortals.length);
+    
             
             // Bypass isVisibleEntity for now since portals should be visible globally
             var visiblePortals = allVisiblePortals;
             
-            console.log('[DEBUG] Visible portals after filter:', visiblePortals.length);
+
 
             const extractData = (player) => {
                 return {
@@ -165,7 +165,7 @@ exports.Map = class {
 
         // Only add visible portals to spatial grid
         const visiblePortals = this.portals.getVisiblePortals();
-        console.log('[DEBUG] Adding', visiblePortals.length, 'visible portals to spatial grid');
+
         visiblePortals.forEach(portal => {
             portal.type = 'portal';
             this.spatialGrid.insert(portal);

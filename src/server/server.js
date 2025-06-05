@@ -342,11 +342,7 @@ const sendUpdates = () => {
     // console.log('[DEBUG] Sending updates to', map.players.data.length, 'players');
     
     map.enumerateWhatPlayersSee(function (playerData, visiblePlayers, visibleFood, visibleMass, visibleViruses, visiblePortals) {
-        // Debug portal data being sent
-        console.log('[DEBUG] Player', playerData.name, 'should see', visiblePortals.length, 'portals');
-        if (visiblePortals && visiblePortals.length > 0) {
-            console.log('[DEBUG] Sending', visiblePortals.length, 'portals to player', playerData.name, 'Portal data:', visiblePortals);
-        }
+
         
         sockets[playerData.id].emit('serverTellPlayerMove', playerData, visiblePlayers, visibleFood, visibleMass, visibleViruses, visiblePortals);
         

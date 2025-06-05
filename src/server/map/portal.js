@@ -92,7 +92,7 @@ exports.PortalManager = class {
     update(config) {
         const now = Date.now();
         
-        console.log('[DEBUG] Portal wave update called');
+
         
         // Update existing portals
         this.data.forEach(portal => portal.update());
@@ -113,13 +113,13 @@ exports.PortalManager = class {
         const timeSinceLastWave = now - this.lastWaveSpawnTime;
         
         if (!this.waveActive && timeSinceLastWave >= config.portal.waveSpawnInterval) {
-            console.log('[DEBUG] Spawning new portal wave with', config.portal.maxSimultaneous, 'portals');
+            
             this.spawnWave(config);
             this.waveActive = true;
             this.lastWaveSpawnTime = now;
         }
         
-        console.log('[DEBUG] Portal wave status: active =', this.waveActive, 'portals =', this.data.length, 'timeSinceLastWave =', timeSinceLastWave);
+
     }
 
     spawnWave(config) {
