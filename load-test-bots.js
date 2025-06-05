@@ -7,8 +7,8 @@ class LoadTestBot {
         this.serverUrl = serverUrl;
         this.socket = null;
         this.isConnected = false;
-        this.position = { x: 2500, y: 2500 }; // Center of default 5000x5000 map
-        this.target = { x: 2500, y: 2500 };
+        this.currentPosition = { x: 2500, y: 2500 }; // Initial guess, server will update
+        this.worldTarget = { x: 2500, y: 2500 }; // Absolute target in the world
         this.name = `Bot${botId}`;
         this.heartbeatInterval = null;
         this.movementInterval = null;
@@ -33,19 +33,35 @@ class LoadTestBot {
             };
             console.log(`Bot ${this.botId}: Sending gotit with data:`, playerData);
             this.socket.emit('gotit', playerData);
-        });
 
-        this.socket.on('welcome', (playerSettings, gameSizes) => {
-            console.log(`Bot ${this.botId}: Welcomed to game`);
-            
-            // Start movement and actions after welcome
+            // Start movement, heartbeat, and actions immediately
             this.startMovement();
             this.startHeartbeat();
             this.startRandomActions();
         });
 
+        this.socket.on('welcome', (playerSettings, gameSizes) => {
+            console.log(`Bot ${this.botId}: Welcomed to game (e.g., on respawn)`);
+            
+            // Update current position with actual starting position from server
+            if (playerSettings && typeof playerSettings.x !== 'undefined' && typeof playerSettings.y !== 'undefined') {
+                this.currentPosition = { x: playerSettings.x, y: playerSettings.y };
+            }
+            // Note: Core logic is no longer solely dependent on 'welcome' for initial startup.
+            // this.startMovement(); // Moved to 'connect'
+            // this.startHeartbeat(); // Moved to 'connect'
+            // this.startRandomActions(); // Moved to 'connect'
+        });
+
         this.socket.on('pongcheck', () => {
             this.latency = Date.now() - this.lastPingTime;
+        });
+
+        this.socket.on('serverTellPlayerMove', (playerData) => {
+            // Update bot's understanding of its current position based on server feedback
+            if (playerData && typeof playerData.x !== 'undefined' && typeof playerData.y !== 'undefined') {
+                this.currentPosition = { x: playerData.x, y: playerData.y };
+            }
         });
 
         this.socket.on('disconnect', () => {
@@ -62,8 +78,12 @@ class LoadTestBot {
     startHeartbeat() {
         // Send heartbeat every 40ms (matches networkUpdateFactor config)
         this.heartbeatInterval = setInterval(() => {
-            if (this.isConnected) {
-                this.socket.emit('0', this.target);
+            if (this.isConnected && this.currentPosition && this.worldTarget) {
+                const relativeTarget = {
+                    x: this.worldTarget.x - this.currentPosition.x,
+                    y: this.worldTarget.y - this.currentPosition.y
+                };
+                this.socket.emit('0', relativeTarget);
             }
         }, 40);
     }
@@ -73,7 +93,8 @@ class LoadTestBot {
         this.movementInterval = setInterval(() => {
             if (this.isConnected) {
                 // Generate random target within game bounds (5000x5000 from config)
-                this.target = {
+                // These are absolute world coordinates
+                this.worldTarget = {
                     x: Math.random() * 4500 + 250, // Keep away from edges
                     y: Math.random() * 4500 + 250
                 };
