@@ -7,7 +7,8 @@ class LoadTestBot {
         this.serverUrl = serverUrl;
         this.socket = null;
         this.isConnected = false;
-        this.position = { x: 2500, y: 2500 }; // Center of default 5000x5000 map
+        this.isAlive = false;
+        this.position = { x: 2500, y: 2500 };
         this.target = { x: 2500, y: 2500 };
         this.name = `Bot${botId}`;
         this.heartbeatInterval = null;
@@ -15,6 +16,29 @@ class LoadTestBot {
         this.actionInterval = null;
         this.lastPingTime = 0;
         this.latency = 0;
+        this.reconnectAttempts = 0;
+        this.maxReconnectAttempts = 5;
+        this.reconnectDelay = 2000;
+        this.gridPosition = this.calculateGridPosition(botId);
+        this.lastDirection = 0;
+        this.avoidingCorner = false;
+    }
+
+    calculateGridPosition(botId) {
+        // Create a 5x5 grid (25 possible positions)
+        const gridSize = 5;
+        const cellSize = 1000; // Each grid cell is 1000x1000
+        const margin = 500; // Margin from edges
+        
+        // Calculate grid coordinates
+        const row = Math.floor(botId % gridSize);
+        const col = Math.floor(botId / gridSize);
+        
+        // Calculate center of grid cell
+        return {
+            x: margin + (col * cellSize) + (cellSize / 2),
+            y: margin + (row * cellSize) + (cellSize / 2)
+        };
     }
 
     connect() {
@@ -24,8 +48,13 @@ class LoadTestBot {
         this.socket.on('connect', () => {
             console.log(`Bot ${this.botId}: Connected`);
             this.isConnected = true;
+            this.reconnectAttempts = 0;
+        });
+
+        this.socket.on('welcome', (playerSettings, gameSizes) => {
+            console.log(`Bot ${this.botId}: Welcomed to game`);
             
-            // Send initial player data immediately after connection
+            // Send initial player data after welcome
             const playerData = {
                 name: this.name,
                 screenWidth: 1920,
@@ -33,64 +62,104 @@ class LoadTestBot {
             };
             console.log(`Bot ${this.botId}: Sending gotit with data:`, playerData);
             this.socket.emit('gotit', playerData);
-        });
-
-        this.socket.on('welcome', (playerSettings, gameSizes) => {
-            console.log(`Bot ${this.botId}: Welcomed to game`);
             
-            // Start movement and actions after welcome
+            this.isAlive = true;
+            
+            // Start movement and actions only when alive
             this.startMovement();
             this.startHeartbeat();
             this.startRandomActions();
         });
 
-        this.socket.on('pongcheck', () => {
-            this.latency = Date.now() - this.lastPingTime;
+        this.socket.on('RIP', () => {
+            console.log(`Bot ${this.botId}: Died`);
+            this.isAlive = false;
+            this.cleanup();
+            
+            // Wait a bit before respawning
+            setTimeout(() => {
+                console.log(`Bot ${this.botId}: Respawning...`);
+                this.socket.emit('respawn');
+            }, 1000);
         });
 
         this.socket.on('disconnect', () => {
             console.log(`Bot ${this.botId}: Disconnected`);
             this.isConnected = false;
+            this.isAlive = false;
             this.cleanup();
+            this.attemptReconnect();
         });
 
         this.socket.on('connect_error', (err) => {
             console.log(`Bot ${this.botId}: Connection error:`, err.message);
+            this.attemptReconnect();
         });
     }
 
-    startHeartbeat() {
-        // Send heartbeat every 40ms (matches networkUpdateFactor config)
-        this.heartbeatInterval = setInterval(() => {
-            if (this.isConnected) {
-                this.socket.emit('0', this.target);
-            }
-        }, 40);
+    attemptReconnect() {
+        if (this.reconnectAttempts < this.maxReconnectAttempts) {
+            this.reconnectAttempts++;
+            console.log(`Bot ${this.botId}: Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
+            setTimeout(() => {
+                this.cleanup();
+                this.connect();
+            }, this.reconnectDelay);
+        } else {
+            console.log(`Bot ${this.botId}: Max reconnection attempts reached, giving up.`);
+        }
     }
 
     startMovement() {
-        // Change target position every 2-5 seconds for realistic movement
         this.movementInterval = setInterval(() => {
-            if (this.isConnected) {
-                // Generate random target within game bounds (5000x5000 from config)
+            if (this.isConnected && this.isAlive) {
+                // Calculate grid-based position
+                const gridPos = this.calculateGridPosition(this.botId);
+                
+                // Add some random offset within the grid cell
+                const offset = 200;
                 this.target = {
-                    x: Math.random() * 4500 + 250, // Keep away from edges
-                    y: Math.random() * 4500 + 250
+                    x: gridPos.x + (Math.random() * offset * 2 - offset),
+                    y: gridPos.y + (Math.random() * offset * 2 - offset)
                 };
+                
+                console.log(`Bot ${this.botId}: Moving to (${this.target.x.toFixed(0)}, ${this.target.y.toFixed(0)})`);
             }
-        }, 2000 + Math.random() * 3000);
+        }, 2000);
+    }
+
+    startHeartbeat() {
+        this.heartbeatInterval = setInterval(() => {
+            if (this.isConnected && this.isAlive) {
+                // Update position based on target
+                const dx = this.target.x - this.position.x;
+                const dy = this.target.y - this.position.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance > 0) {
+                    const speed = 6.25;
+                    const moveX = (dx / distance) * speed;
+                    const moveY = (dy / distance) * speed;
+                    
+                    this.position.x += moveX;
+                    this.position.y += moveY;
+                }
+                
+                // Send current position to server
+                this.socket.emit('0', this.position);
+            }
+        }, 30);
     }
 
     startRandomActions() {
-        // Randomly split or feed every 5-15 seconds
         this.actionInterval = setInterval(() => {
-            if (this.isConnected && Math.random() < 0.3) {
-                if (Math.random() < 0.7) {
-                    // Feed (70% chance)
-                    this.socket.emit('1');
-                } else {
-                    // Split (30% chance)
-                    this.socket.emit('2');
+            if (this.isConnected && this.isAlive) {
+                if (Math.random() < 0.3) {
+                    if (Math.random() < 0.7) {
+                        this.socket.emit('1'); // Feed
+                    } else {
+                        this.socket.emit('2'); // Split
+                    }
                 }
             }
         }, 5000 + Math.random() * 10000);

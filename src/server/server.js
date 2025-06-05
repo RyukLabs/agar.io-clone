@@ -238,19 +238,30 @@ const tickPlayer = (currentPlayer) => {
         return virus.mass < cell.mass && isEntityInsideCircle(virus, cellCircle)
     }
 
+    const touchesPortal = (cell, cellCircle, portal) => {
+        return isEntityInsideCircle(portal, cellCircle);
+    }
+
     const cellsToSplit = [];
+    let playerTouchedPortal = false;
+
     for (let cellIndex = 0; cellIndex < currentPlayer.cells.length; cellIndex++) {
         const currentCell = currentPlayer.cells[cellIndex];
-
         const cellCircle = currentCell.toCircle();
 
         const eatenFoodIndexes = util.getIndexes(map.food.data, food => isEntityInsideCircle(food, cellCircle));
         const eatenMassIndexes = util.getIndexes(map.massFood.data, mass => canEatMass(currentCell, cellCircle, cellIndex, mass));
         const eatenVirusIndexes = util.getIndexes(map.viruses.data, virus => canEatVirus(currentCell, cellCircle, virus));
+        const touchedPortalIndexes = util.getIndexes(map.portals.data, portal => touchesPortal(currentCell, cellCircle, portal));
 
         if (eatenVirusIndexes.length > 0) {
             cellsToSplit.push(cellIndex);
             map.viruses.delete(eatenVirusIndexes)
+        }
+
+        if (touchedPortalIndexes.length > 0) {
+            playerTouchedPortal = true;
+            // Don't remove portals when touched - they remain for other players
         }
 
         let massGained = eatenMassIndexes.reduce((acc, index) => acc + map.massFood.data[index].mass, 0);
@@ -260,7 +271,16 @@ const tickPlayer = (currentPlayer) => {
         massGained += (eatenFoodIndexes.length * config.foodMass);
         currentPlayer.changeCellMass(cellIndex, massGained);
     }
+    
     currentPlayer.virusSplit(cellsToSplit, config.limitSplit, config.defaultPlayerMass);
+
+    // Handle portal death
+    if (playerTouchedPortal) {
+        console.log('[INFO] Player ' + currentPlayer.name + ' died by touching a portal');
+        sockets[currentPlayer.id].emit('RIP');
+        map.players.removePlayerByID(currentPlayer.id);
+        io.emit('playerDied', { name: currentPlayer.name });
+    }
 };
 
 const tickGame = () => {
@@ -306,13 +326,17 @@ const gameloop = () => {
         map.players.shrinkCells(config.massLossRate, config.defaultPlayerMass, config.minMassLoss);
     }
 
-    map.balanceMass(config.foodMass, config.gameMass, config.maxFood, config.maxVirus);
+    map.balanceMass(config.foodMass, config.gameMass, config.maxFood, config.maxVirus, config.maxPortal);
+    
+    // Update spatial grid for optimized entity lookups
+    map.updateSpatialGrid();
 };
 
 const sendUpdates = () => {
     spectators.forEach(updateSpectator);
-    map.enumerateWhatPlayersSee(function (playerData, visiblePlayers, visibleFood, visibleMass, visibleViruses) {
-        sockets[playerData.id].emit('serverTellPlayerMove', playerData, visiblePlayers, visibleFood, visibleMass, visibleViruses);
+    map.enumerateWhatPlayersSee(function (playerData, visiblePlayers, visibleFood, visibleMass, visibleViruses, visiblePortals) {
+        sockets[playerData.id].emit('serverTellPlayerMove', playerData, visiblePlayers, visibleFood, visibleMass, visibleViruses, visiblePortals);
+        
         if (leaderboardChanged) {
             sendLeaderboard(sockets[playerData.id]);
         }

@@ -117,6 +117,7 @@ var viruses = [];
 var fireFood = [];
 var users = [];
 var leaderboard = [];
+var portals = [];
 var target = { x: player.x, y: player.y };
 global.target = target;
 
@@ -237,7 +238,7 @@ function setupSocket(socket) {
     });
 
     // Handle movement.
-    socket.on('serverTellPlayerMove', function (playerData, userData, foodsList, massList, virusList) {
+    socket.on('serverTellPlayerMove', function (playerData, userData, foodsList, massList, virusList, portalsList) {
         if (global.playerType == 'player') {
             player.x = playerData.x;
             player.y = playerData.y;
@@ -249,6 +250,7 @@ function setupSocket(socket) {
         foods = foodsList;
         viruses = virusList;
         fireFood = massList;
+        portals = portalsList || []; // Default to empty array if undefined
     });
 
     // Death.
@@ -280,11 +282,23 @@ function setupSocket(socket) {
 
 const isUnnamedCell = (name) => name.length < 1;
 
-const getPosition = (entity, player, screen) => {
+// Utility function to check if entity is in viewport
+function isInViewport(entity, player, screen) {
+    const viewportMargin = 100; // Buffer to prevent popping
+    const entityViewX = entity.x - player.x + screen.width / 2;
+    const entityViewY = entity.y - player.y + screen.height / 2;
+    
+    return entityViewX > -viewportMargin && 
+           entityViewX < screen.width + viewportMargin &&
+           entityViewY > -viewportMargin && 
+           entityViewY < screen.height + viewportMargin;
+}
+
+function getPosition(entity, player, screen) {
     return {
         x: entity.x - player.x + screen.width / 2,
         y: entity.y - player.y + screen.height / 2
-    }
+    };
 }
 
 window.requestAnimFrame = (function () {
@@ -313,52 +327,70 @@ function gameLoop() {
         graph.fillRect(0, 0, global.screen.width, global.screen.height);
 
         render.drawGrid(global, player, global.screen, graph);
-        foods.forEach(food => {
+
+        // Apply viewport culling
+        const visibleFood = foods.filter(food => isInViewport(food, player, global.screen));
+        const visibleFireFood = fireFood.filter(food => isInViewport(food, player, global.screen));
+        const visibleViruses = viruses.filter(virus => isInViewport(virus, player, global.screen));
+        const visiblePortals = portals.filter(portal => isInViewport(portal, player, global.screen));
+        const visibleUsers = users.filter(user => isInViewport(user, player, global.screen));
+
+        // Render only visible entities
+        visibleFood.forEach(food => {
             let position = getPosition(food, player, global.screen);
             render.drawFood(position, food, graph);
         });
-        fireFood.forEach(fireFood => {
+
+        visibleFireFood.forEach(fireFood => {
             let position = getPosition(fireFood, player, global.screen);
             render.drawFireFood(position, fireFood, playerConfig, graph);
         });
-        viruses.forEach(virus => {
+
+        visibleViruses.forEach(virus => {
             let position = getPosition(virus, player, global.screen);
             render.drawVirus(position, virus, graph);
         });
 
+        visiblePortals.forEach(portal => {
+            let position = getPosition(portal, player, global.screen);
+            render.drawPortal(position, portal, graph);
+        });
 
-        let borders = { // Position of the borders on the screen
+        let borders = {
             left: global.screen.width / 2 - player.x,
             right: global.screen.width / 2 + global.game.width - player.x,
             top: global.screen.height / 2 - player.y,
             bottom: global.screen.height / 2 + global.game.height - player.y
         }
+
         if (global.borderDraw) {
             render.drawBorder(borders, graph);
         }
 
         var cellsToDraw = [];
-        for (var i = 0; i < users.length; i++) {
-            let color = 'hsl(' + users[i].hue + ', 100%, 50%)';
-            let borderColor = 'hsl(' + users[i].hue + ', 100%, 45%)';
-            for (var j = 0; j < users[i].cells.length; j++) {
+        for (var i = 0; i < visibleUsers.length; i++) {
+            let color = 'hsl(' + visibleUsers[i].hue + ', 100%, 50%)';
+            let borderColor = 'hsl(' + visibleUsers[i].hue + ', 100%, 45%)';
+            for (var j = 0; j < visibleUsers[i].cells.length; j++) {
                 cellsToDraw.push({
                     color: color,
                     borderColor: borderColor,
-                    mass: users[i].cells[j].mass,
-                    name: users[i].name,
-                    radius: users[i].cells[j].radius,
-                    x: users[i].cells[j].x - player.x + global.screen.width / 2,
-                    y: users[i].cells[j].y - player.y + global.screen.height / 2
+                    mass: visibleUsers[i].cells[j].mass,
+                    name: visibleUsers[i].name,
+                    radius: visibleUsers[i].cells[j].radius,
+                    x: visibleUsers[i].cells[j].x - player.x + global.screen.width / 2,
+                    y: visibleUsers[i].cells[j].y - player.y + global.screen.height / 2
                 });
             }
         }
+
         cellsToDraw.sort(function (obj1, obj2) {
             return obj1.mass - obj2.mass;
         });
+
         render.drawCells(cellsToDraw, playerConfig, global.toggleMassState, borders, graph);
 
-        socket.emit('0', window.canvas.target); // playerSendTarget "Heartbeat".
+        socket.emit('0', window.canvas.target);
     }
 }
 

@@ -8,6 +8,17 @@ const drawRoundObject = (position, radius, graph) => {
     graph.stroke();
 }
 
+const drawCircle = (position, radius, sides, graph) => {
+    graph.beginPath();
+    for (let theta = 0; theta < FULL_ANGLE; theta += FULL_ANGLE / sides) {
+        let point = circlePoint(position, radius, theta);
+        graph.lineTo(point.x, point.y);
+    }
+    graph.closePath();
+    graph.stroke();
+    graph.fill();
+}
+
 const drawFood = (position, food, graph) => {
     graph.fillStyle = 'hsl(' + food.hue + ', 100%, 50%)';
     graph.strokeStyle = 'hsl(' + food.hue + ', 100%, 45%)';
@@ -19,18 +30,41 @@ const drawVirus = (position, virus, graph) => {
     graph.strokeStyle = virus.stroke;
     graph.fillStyle = virus.fill;
     graph.lineWidth = virus.strokeWidth;
-    let theta = 0;
-    let sides = 20;
 
+    drawCircle(position, virus.radius, 20, graph);
+}
+
+const drawPortal = (position, portal, graph) => {
+    graph.save();
+    
+    // Create a glowing effect
+    graph.shadowColor = portal.fill;
+    graph.shadowBlur = 30;
+    
+    graph.strokeStyle = portal.stroke;
+    graph.fillStyle = portal.fill;
+    graph.lineWidth = portal.strokeWidth;
+
+    // Draw portal with a special pulsing effect
+    const pulseRadius = portal.radius + Math.sin(Date.now() * 0.005) * 5;
+    
+    // Draw outer glow
     graph.beginPath();
-    for (let theta = 0; theta < FULL_ANGLE; theta += FULL_ANGLE / sides) {
-        let point = circlePoint(position, virus.radius, theta);
-        graph.lineTo(point.x, point.y);
-    }
-    graph.closePath();
-    graph.stroke();
+    graph.arc(position.x, position.y, pulseRadius + 10, 0, 2 * Math.PI);
+    graph.fillStyle = portal.fill + '30'; // Semi-transparent
     graph.fill();
-};
+    
+    // Draw main portal body
+    drawCircle(position, pulseRadius, 12, graph); // 12 sides for more dangerous look
+    
+    // Draw inner dark core
+    graph.fillStyle = '#000000';
+    graph.beginPath();
+    graph.arc(position.x, position.y, pulseRadius * 0.4, 0, 2 * Math.PI);
+    graph.fill();
+    
+    graph.restore();
+}
 
 const drawFireFood = (position, mass, playerConfig, graph) => {
     graph.strokeStyle = 'hsl(' + mass.hue + ', 100%, 45%)';
@@ -155,6 +189,7 @@ const drawErrorMessage = (message, graph, screen) => {
 module.exports = {
     drawFood,
     drawVirus,
+    drawPortal,
     drawFireFood,
     drawCells,
     drawErrorMessage,
