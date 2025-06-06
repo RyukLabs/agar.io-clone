@@ -151,18 +151,23 @@ const drawErrorMessage = (message, graph, screen) => {
     graph.fillStyle = gradient;
     graph.fillRect(0, 0, screen.width, screen.height);
 
+    // Shadow for text
     graph.shadowColor = 'rgba(0, 0, 0, 0.7)';
     graph.shadowBlur = 10;
     graph.shadowOffsetX = 2;
     graph.shadowOffsetY = 2;
 
+    // Text styles
     graph.fillStyle = '#FFFFFF';
     graph.textAlign = 'center';
     graph.font = 'bold 36px Arial';
 
-    const maxWidth = screen.width * 0.8;  
+    // Word wrap settings
+    const maxWidth = screen.width * 0.8;  // max width 80% of screen width
+    const lineHeight = 44;                // line height based on font size
     const x = screen.width / 2;
 
+    // Function to split text into lines fitting maxWidth
     function wrapText(text, maxWidth) {
         const words = text.split(' ');
         const lines = [];

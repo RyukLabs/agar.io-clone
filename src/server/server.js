@@ -270,21 +270,15 @@ const tickGame = () => {
 
     map.players.handleCollisions(function (gotEaten, eater) {
         const cellGotEaten = map.players.getCell(gotEaten.playerIndex, gotEaten.cellIndex);
-
-
-// Adds the mass of the consumed cell to the eater’s cell.
-
-// Uses the changeCellMass function to update the eater's cell.
+    // Adds the mass of the consumed cell to the eater’s cell.
+    // Uses the changeCellMass function to update the eater's cell.
         map.players.data[eater.playerIndex].changeCellMass(eater.cellIndex, cellGotEaten.mass);
         const playerDied = map.players.removeCell(gotEaten.playerIndex, gotEaten.cellIndex);
         if (playerDied) {
             let playerGotEaten = map.players.data[gotEaten.playerIndex];
-            const eaterData = map.players.data[eater.playerIndex]
             const allPlayerData = map.players.data
-            // console.log(allPlayerData,'allplayerdata')
-            // console.log(playerGotEaten,'playergot eaten')
-            io.emit('playerDied', { name: playerGotEaten.name }); //TODO: on client it is `playerEatenName` instead of `name`
-            sockets[playerGotEaten.id].emit('RIP',playerGotEaten,allPlayerData,cellGotEaten.mass);
+            io.emit('playerDied', { name: playerGotEaten.name }); 
+            sockets[playerGotEaten.id].emit('RIP', playerGotEaten , allPlayerData , cellGotEaten.mass);
             map.players.removePlayerByIndex(gotEaten.playerIndex);
         }
     });
@@ -331,7 +325,7 @@ const sendUpdates = () => {
 
 const sendLeaderboard = (socket) => {
     socket.emit('leaderboard', {
-        players: map.players.data,
+        players: map.players.length,
         leaderboard
     });
 }

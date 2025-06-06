@@ -111,7 +111,7 @@ var player = {
     target: { x: global.screen.width / 2, y: global.screen.height / 2 }
 };
 global.player = player;
-// console.log(player,'global value after welcome')
+
 var foods = [];
 var viruses = [];
 var fireFood = [];
@@ -177,9 +177,7 @@ function setupSocket(socket) {
         player.target = window.canvas.target;
         global.player = player;
         window.chat.player = player;
-        // console.log(player,'playerr data at ui')
-        socket.emit('gotit', player);
-        
+        socket.emit('gotit', player);        
         global.gameStart = true;
         window.chat.addSystemLine('Connected to the game!');
         window.chat.addSystemLine('Type <b>-help</b> for a list of commands.');
@@ -210,13 +208,12 @@ function setupSocket(socket) {
 
     socket.on('leaderboard', (data) => {
         leaderboard = data.leaderboard;
-     
         var status = '<span class="title">Leaderboard</span>';
         for (var i = 0; i < leaderboard.length; i++) {
             status += '<br />';
             if (leaderboard[i].id == player.id) {
                 if (leaderboard[i].name.length !== 0)
-                    status += '<span class="me">' + (i + 1) + '. ' + leaderboard[i].name +  "</span>";
+                    status += '<span class="me">' + (i + 1) + '. ' + leaderboard[i].name + "</span>";
                 else
                     status += '<span class="me">' + (i + 1) + ". An unnamed cell</span>";
             } else {
@@ -256,15 +253,11 @@ function setupSocket(socket) {
     });
 
 
-socket.on('RIP', function (playerGotEaten, playerData,playerMass) {
-
-
-    // Ensure valid data is received
+    socket.on('RIP', function (playerGotEaten, playerData,playerMass) {
     if (!playerGotEaten || !playerData || !Array.isArray(playerData)) {
         console.error('Invalid data received for RIP event.');
         return;
     }
-
     // Calculate total mass and pool with reserve
     const totalMass = playerData.reduce((sum, player) => sum + player.massTotal, 0);
     const fee = 5; // Fee per player
@@ -278,8 +271,7 @@ socket.on('RIP', function (playerGotEaten, playerData,playerMass) {
     // Update game state and display error message
     global.gameStart = false;
     render.drawErrorMessage(
-        `Hi, ${playerGotEaten.name}! You have been eliminated.  total mass :${playerMass}. 
-    , Reward: $${totalReward.toFixed(2)}`,
+        `Hi, ${playerGotEaten.name}! You have been eliminated.Total Mass:${playerMass} , Reward:$${totalReward.toFixed(2)}`,
         graph,
         global.screen
     );
@@ -293,7 +285,7 @@ socket.on('RIP', function (playerGotEaten, playerData,playerMass) {
             window.cancelAnimationFrame(global.animLoopHandle);
             global.animLoopHandle = undefined;
         }
-    }, 25000);
+    }, 5000);
 });
 
 
