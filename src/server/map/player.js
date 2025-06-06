@@ -345,6 +345,7 @@ exports.PlayerManager = class {
         for (let player of this.data) {
             result += player.massTotal;
         }
+
         return result;
     }
 }

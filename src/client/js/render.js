@@ -6,11 +6,11 @@ const drawRoundObject = (position, radius, graph) => {
     graph.closePath();
     graph.fill();
     graph.stroke();
-}
+};
 
 const drawFood = (position, food, graph) => {
-    graph.fillStyle = 'hsl(' + food.hue + ', 100%, 50%)';
-    graph.strokeStyle = 'hsl(' + food.hue + ', 100%, 45%)';
+    graph.fillStyle = "hsl(" + food.hue + ", 100%, 50%)";
+    graph.strokeStyle = "hsl(" + food.hue + ", 100%, 45%)";
     graph.lineWidth = 0;
     drawRoundObject(position, food.radius, graph);
 };
@@ -33,28 +33,28 @@ const drawVirus = (position, virus, graph) => {
 };
 
 const drawFireFood = (position, mass, playerConfig, graph) => {
-    graph.strokeStyle = 'hsl(' + mass.hue + ', 100%, 45%)';
-    graph.fillStyle = 'hsl(' + mass.hue + ', 100%, 50%)';
+    graph.strokeStyle = "hsl(" + mass.hue + ", 100%, 45%)";
+    graph.fillStyle = "hsl(" + mass.hue + ", 100%, 50%)";
     graph.lineWidth = playerConfig.border + 2;
     drawRoundObject(position, mass.radius - 1, graph);
 };
 
-const valueInRange = (min, max, value) => Math.min(max, Math.max(min, value))
+const valueInRange = (min, max, value) => Math.min(max, Math.max(min, value));
 
 const circlePoint = (origo, radius, theta) => ({
     x: origo.x + radius * Math.cos(theta),
-    y: origo.y + radius * Math.sin(theta)
+    y: origo.y + radius * Math.sin(theta),
 });
 
 const cellTouchingBorders = (cell, borders) =>
     cell.x - cell.radius <= borders.left ||
     cell.x + cell.radius >= borders.right ||
     cell.y - cell.radius <= borders.top ||
-    cell.y + cell.radius >= borders.bottom
+    cell.y + cell.radius >= borders.bottom;
 
 const regulatePoint = (point, borders) => ({
     x: valueInRange(borders.left, borders.right, point.x),
-    y: valueInRange(borders.top, borders.bottom, point.y)
+    y: valueInRange(borders.top, borders.bottom, point.y),
 });
 
 const drawCellWithLines = (cell, borders, graph) => {
@@ -72,7 +72,7 @@ const drawCellWithLines = (cell, borders, graph) => {
     graph.closePath();
     graph.fill();
     graph.stroke();
-}
+};
 
 const drawCells = (cells, playerConfig, toggleMassState, borders, graph) => {
     for (let cell of cells) {
@@ -94,16 +94,17 @@ const drawCells = (cells, playerConfig, toggleMassState, borders, graph) => {
         graph.fillStyle = playerConfig.textColor;
         graph.strokeStyle = playerConfig.textBorder;
         graph.miterLimit = 1;
-        graph.lineJoin = 'round';
-        graph.textAlign = 'center';
-        graph.textBaseline = 'middle';
-        graph.font = 'bold ' + fontSize + 'px sans-serif';
+        graph.lineJoin = "round";
+        graph.textAlign = "center";
+        graph.textBaseline = "middle";
+        graph.font = "bold " + fontSize + "px sans-serif";
         graph.strokeText(cell.name, cell.x, cell.y);
         graph.fillText(cell.name, cell.x, cell.y);
 
         // Draw the mass (if enabled)
         if (toggleMassState === 1) {
-            graph.font = 'bold ' + Math.max(fontSize / 3 * 2, 10) + 'px sans-serif';
+            graph.font =
+                "bold " + Math.max((fontSize / 3) * 2, 10) + "px sans-serif";
             if (cell.name.length === 0) fontSize = 0;
             graph.strokeText(Math.round(cell.mass), cell.x, cell.y + fontSize);
             graph.fillText(Math.round(cell.mass), cell.x, cell.y + fontSize);
@@ -133,24 +134,70 @@ const drawGrid = (global, player, screen, graph) => {
 
 const drawBorder = (borders, graph) => {
     graph.lineWidth = 1;
-    graph.strokeStyle = '#000000'
-    graph.beginPath()
+    graph.strokeStyle = "#000000";
+    graph.beginPath();
     graph.moveTo(borders.left, borders.top);
     graph.lineTo(borders.right, borders.top);
     graph.lineTo(borders.right, borders.bottom);
     graph.lineTo(borders.left, borders.bottom);
-    graph.closePath()
+    graph.closePath();
     graph.stroke();
 };
 
 const drawErrorMessage = (message, graph, screen) => {
-    graph.fillStyle = '#333333';
+    const gradient = graph.createLinearGradient(0, 0, 0, screen.height);
+    gradient.addColorStop(0, "#4A90E2");
+    gradient.addColorStop(1, "#1C1C1C");
+    graph.fillStyle = gradient;
     graph.fillRect(0, 0, screen.width, screen.height);
-    graph.textAlign = 'center';
-    graph.fillStyle = '#FFFFFF';
-    graph.font = 'bold 30px sans-serif';
-    graph.fillText(message, screen.width / 2, screen.height / 2);
-}
+
+    graph.shadowColor = "rgba(0, 0, 0, 0.7)";
+    graph.shadowBlur = 10;
+    graph.shadowOffsetX = 2;
+    graph.shadowOffsetY = 2;
+
+    // Text styles
+    graph.fillStyle = "#FFFFFF";
+    graph.textAlign = "center";
+    graph.font = "bold 36px Arial";
+
+    // Word wrap settings
+    const maxWidth = screen.width * 0.8;
+    const x = screen.width / 2;
+
+    // Function to split text into lines fitting maxWidth
+    function wrapText(text, maxWidth) {
+        const words = text.split(" ");
+        const lines = [];
+        let line = "";
+
+        words.forEach((word) => {
+            const testLine = line + word + " ";
+            const testWidth = graph.measureText(testLine).width;
+            if (testWidth > maxWidth && line !== "") {
+                lines.push(line.trim());
+                line = word + " ";
+            } else {
+                line = testLine;
+            }
+        });
+        lines.push(line.trim());
+        return lines;
+    }
+
+    // Wrap the message text into lines
+    const lines = wrapText(message, maxWidth);
+
+    // Calculate starting y to center text block vertically
+    const textBlockHeight = lines.length * lineHeight;
+    let y = (screen.height - textBlockHeight) / 2;
+
+    // Draw each line centered horizontally
+    lines.forEach((line) => {
+        graph.fillText(line, x, y);
+        y += lineHeight;
+    });
+};
 
 module.exports = {
     drawFood,
@@ -159,5 +206,5 @@ module.exports = {
     drawCells,
     drawErrorMessage,
     drawGrid,
-    drawBorder
+    drawBorder,
 };
