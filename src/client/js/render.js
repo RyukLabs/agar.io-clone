@@ -144,13 +144,65 @@ const drawBorder = (borders, graph) => {
 };
 
 const drawErrorMessage = (message, graph, screen) => {
-    graph.fillStyle = '#333333';
+    // Gradient background
+    const gradient = graph.createLinearGradient(0, 0, 0, screen.height);
+    gradient.addColorStop(0, '#4A90E2');
+    gradient.addColorStop(1, '#1C1C1C');
+    graph.fillStyle = gradient;
     graph.fillRect(0, 0, screen.width, screen.height);
-    graph.textAlign = 'center';
+
+    // Shadow for text
+    graph.shadowColor = 'rgba(0, 0, 0, 0.7)';
+    graph.shadowBlur = 10;
+    graph.shadowOffsetX = 2;
+    graph.shadowOffsetY = 2;
+
+    // Text styles
     graph.fillStyle = '#FFFFFF';
-    graph.font = 'bold 30px sans-serif';
-    graph.fillText(message, screen.width / 2, screen.height / 2);
-}
+    graph.textAlign = 'center';
+    graph.font = 'bold 36px Arial';
+
+    // Word wrap settings
+    const maxWidth = screen.width * 0.8;  // max width 80% of screen width
+    const lineHeight = 44;                // line height based on font size
+    const x = screen.width / 2;
+
+    // Function to split text into lines fitting maxWidth
+    function wrapText(text, maxWidth) {
+        const words = text.split(' ');
+        const lines = [];
+        let line = '';
+
+        words.forEach((word) => {
+            const testLine = line + word + ' ';
+            const testWidth = graph.measureText(testLine).width;
+            if (testWidth > maxWidth && line !== '') {
+                lines.push(line.trim());
+                line = word + ' ';
+            } else {
+                line = testLine;
+            }
+        });
+        lines.push(line.trim());
+        return lines;
+    }
+
+    // Wrap the message text into lines
+    const lines = wrapText(message, maxWidth);
+
+    // Calculate starting y to center text block vertically
+    const textBlockHeight = lines.length * lineHeight;
+    let y = (screen.height - textBlockHeight) / 2;
+
+    // Draw each line centered horizontally
+    lines.forEach(line => {
+        graph.fillText(line, x, y);
+        y += lineHeight;
+    });
+
+};
+
+
 
 module.exports = {
     drawFood,

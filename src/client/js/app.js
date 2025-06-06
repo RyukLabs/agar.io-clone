@@ -177,7 +177,7 @@ function setupSocket(socket) {
         player.target = window.canvas.target;
         global.player = player;
         window.chat.player = player;
-        socket.emit('gotit', player);
+        socket.emit('gotit', player);        
         global.gameStart = true;
         window.chat.addSystemLine('Connected to the game!');
         window.chat.addSystemLine('Type <b>-help</b> for a list of commands.');
@@ -249,21 +249,45 @@ function setupSocket(socket) {
         foods = foodsList;
         viruses = virusList;
         fireFood = massList;
+
     });
 
-    // Death.
-    socket.on('RIP', function () {
-        global.gameStart = false;
-        render.drawErrorMessage('You died!', graph, global.screen);
-        window.setTimeout(() => {
-            document.getElementById('gameAreaWrapper').style.opacity = 0;
-            document.getElementById('startMenuWrapper').style.maxHeight = '1000px';
-            if (global.animLoopHandle) {
-                window.cancelAnimationFrame(global.animLoopHandle);
-                global.animLoopHandle = undefined;
-            }
-        }, 2500);
-    });
+
+    socket.on('RIP', function (playerGotEaten, playerData,playerMass) {
+    if (!playerGotEaten || !playerData || !Array.isArray(playerData)) {
+        console.error('Invalid data received for RIP event.');
+        return;
+    }
+    // Calculate total mass and pool with reserve
+    const totalMass = playerData.reduce((sum, player) => sum + player.massTotal, 0);
+    const fee = 5; // Fee per player
+    const pool = playerData.length * fee;
+    const reservedAmount = pool * 0.1; // 10% reserve
+    const distributablePool = pool - reservedAmount; // Remaining 90% for rewards
+
+    // Calculate the reward for the player who got eaten
+    const totalReward = (playerMass / totalMass) * distributablePool;
+
+    // Update game state and display error message
+    global.gameStart = false;
+    render.drawErrorMessage(
+        `Hi, ${playerGotEaten.name}! You have been eliminated.Total Mass:${playerMass} , Reward:$${totalReward.toFixed(2)}`,
+        graph,
+        global.screen
+    );
+
+    // Handle UI transitions
+    window.setTimeout(() => {
+        document.getElementById('gameAreaWrapper').style.opacity = 0;
+        document.getElementById('startMenuWrapper').style.maxHeight = '1000px';
+
+        if (global.animLoopHandle) {
+            window.cancelAnimationFrame(global.animLoopHandle);
+            global.animLoopHandle = undefined;
+        }
+    }, 5000);
+});
+
 
     socket.on('kick', function (reason) {
         global.gameStart = false;
