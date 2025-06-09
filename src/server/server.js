@@ -14,6 +14,7 @@ const config = require('../../config');
 const util = require('./lib/util');
 const mapUtils = require('./map/map');
 const {getPosition} = require("./lib/entityUtils");
+const connectDB = require('./db/db');
 
 let map = new mapUtils.Map(config);
 
@@ -27,7 +28,7 @@ let leaderboardChanged = false;
 const Vector = SAT.Vector;
 
 app.use(express.static(__dirname + '/../client'));
-
+connectDB()
 io.on('connection', function (socket) {
     let type = socket.handshake.query.type;
     console.log('User has connected: ', type);
