@@ -78,7 +78,7 @@ window.onload = function () {
         }
     };
 
-    playerNameInput.addEventListener('keypress', function (e) {
+            playerNameInput.addEventListener('keypress', function (e) {
         var key = e.which || e.keyCode;
 
         if (key === global.KEY_ENTER) {
@@ -90,6 +90,73 @@ window.onload = function () {
             }
         }
     });
+
+    // Settings object to handle UI controls
+    var settingsHandlers = {
+        toggleBorder: function() {
+            window.chat.toggleBorder();
+        },
+        toggleMass: function() {
+            window.chat.toggleMass();
+        },
+        toggleContinuity: function() {
+            window.chat.toggleContinuity();
+        },
+        toggleRoundFood: function() {
+            window.chat.toggleRoundFood();
+        },
+        toggleDarkMode: function() {
+            console.log('Dark mode toggle called');
+            console.log('Current backgroundColor:', global.backgroundColor);
+            console.log('Current lineColor:', global.lineColor);
+            
+            // Direct implementation (same as chat client)
+            var LIGHT = '#f2fbff',
+                DARK = '#181818';
+            var LINELIGHT = '#000000',
+                LINEDARK = '#ffffff';
+
+            if (global.backgroundColor === LIGHT) {
+                global.backgroundColor = DARK;
+                global.lineColor = LINEDARK;
+                console.log('Dark mode enabled. New backgroundColor:', global.backgroundColor);
+                if (window.chat && window.chat.addSystemLine) {
+                    window.chat.addSystemLine('Dark mode enabled.');
+                }
+            } else {
+                global.backgroundColor = LIGHT;
+                global.lineColor = LINELIGHT;
+                console.log('Dark mode disabled. New backgroundColor:', global.backgroundColor);
+                if (window.chat && window.chat.addSystemLine) {
+                    window.chat.addSystemLine('Dark mode disabled.');
+                }
+            }
+        }
+    };
+
+    // Bind settings checkboxes after page load
+    var visibleBorderSetting = document.getElementById('visBord');
+    if (visibleBorderSetting) visibleBorderSetting.onchange = settingsHandlers.toggleBorder;
+
+    var showMassSetting = document.getElementById('showMass');
+    if (showMassSetting) showMassSetting.onchange = settingsHandlers.toggleMass;
+
+    var continuitySetting = document.getElementById('continuity');
+    if (continuitySetting) continuitySetting.onchange = settingsHandlers.toggleContinuity;
+
+    var roundFoodSetting = document.getElementById('roundFood');
+    if (roundFoodSetting) roundFoodSetting.onchange = settingsHandlers.toggleRoundFood;
+
+    var darkModeSetting = document.getElementById('darkMode');
+    if (darkModeSetting) {
+        console.log('Dark mode checkbox found and bound');
+        darkModeSetting.onchange = function() {
+            console.log('Dark mode checkbox clicked');
+            settingsHandlers.toggleDarkMode();
+        };
+    } else {
+        console.log('Dark mode checkbox not found');
+    }
 };
 
 // TODO: Break out into GameControls.
@@ -136,18 +203,8 @@ global.target = target;
 
 window.canvas = new Canvas();
 window.chat = new ChatClient();
-
-var visibleBorderSetting = document.getElementById('visBord');
-visibleBorderSetting.onchange = settings.toggleBorder;
-
-var showMassSetting = document.getElementById('showMass');
-showMassSetting.onchange = settings.toggleMass;
-
-var continuitySetting = document.getElementById('continuity');
-continuitySetting.onchange = settings.toggleContinuity;
-
-var roundFoodSetting = document.getElementById('roundFood');
-roundFoodSetting.onchange = settings.toggleRoundFood;
+// Initialize chat functions immediately so UI controls work
+window.chat.registerFunctions();
 
 var c = window.canvas.cv;
 var graph = c.getContext('2d');
