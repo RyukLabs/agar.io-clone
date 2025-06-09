@@ -283,3 +283,27 @@ input [type="image"]:focus{
  outline: 1px solid transparent;
  border-style: none;
 }
+
+
+
+#disconnect {
+    background-color: #ff4d4d;
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    font-size: 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+#disconnect:hover {
+    background-color: #e60000;
+    transform: scale(1.05);
+}
+
+#disconnect:active {
+    transform: scale(0.98);
+    background-color: #cc0000;
+}

@@ -1,3 +1,11 @@
+
+var {appKit} = require('../config/appKit')
+var {store} = require('../store/appkitStore')
+var { updateTheme, updateButtonVisibility }  = require('../utils/dom')
+var  { signMessage, sendTx, getBalance } = require('../services/wallet')
+var {initializeSubscribers} = require('../utils/suscribers')
+var { solana, solanaDevnet} = require('@reown/appkit/networks')
+
 var io = require('socket.io-client');
 var render = require('./render');
 var ChatClient = require('./chat-client');
@@ -11,7 +19,8 @@ var debug = function (args) {
     if (console && console.log) {
         console.log(args);
     }
-};
+}
+
 
 if (/Android|webOS|iPhone|iPad|iPod|BlackBerry/i.test(navigator.userAgent)) {
     global.mobile = true;
@@ -401,3 +410,59 @@ function resize() {
 
     socket.emit('windowResized', { screenWidth: global.screen.width, screenHeight: global.screen.height });
 }
+
+
+
+
+
+// function for reown 
+
+initializeSubscribers(appKit)
+
+updateButtonVisibility(appKit.getIsConnectedState());
+
+document.getElementById('open-connect-modal')?.addEventListener(
+  'click', () => appKit.open()
+)
+
+document.getElementById('disconnect')?.addEventListener(
+  'click', () => {
+    appKit.disconnect()
+  }
+)
+
+document.getElementById('switch-network')?.addEventListener(
+  'click', () => {
+    const currentChainId = store.networkState?.chainId
+    appKit.switchNetwork(currentChainId === solana.id ? solana : solanaDevnet)
+  }
+)
+
+document.getElementById('sign-message')?.addEventListener(
+  'click', async () => {
+    const signature = await signMessage(store.solanaProvider, store.accountState.address)
+
+    document.getElementById('signatureState').innerHTML = signature
+    document.getElementById('signatureSection').style.display = ''
+  }
+)
+
+document.getElementById('send-tx')?.addEventListener(
+  'click', async () => {
+    const tx = await sendTx(store.solanaProvider, store.solanaConnection, store.accountState.address)
+    console.log('Tx:', tx)
+
+    document.getElementById('txState').innerHTML = JSON.stringify(tx, null, 2)
+    document.getElementById('txSection').style.display = ''
+  }
+)
+
+document.getElementById('get-balance')?.addEventListener(
+  'click', async () => {
+    const balance = await getBalance(store.solanaProvider, store.solanaConnection, store.accountState.address)
+    
+    document.getElementById('balanceState').innerHTML = balance + ' SOL'
+    document.getElementById('balanceSection').style.display = ''
+  }
+)
+updateTheme(store.themeState.themeMode)
