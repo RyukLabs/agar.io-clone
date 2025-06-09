@@ -92,6 +92,15 @@ exports.PortalManager = class {
     update(config) {
         const now = Date.now();
         
+        // If maxPortal is 0, disable all portal spawning and clear existing portals
+        if (config.maxPortal === 0) {
+            if (this.data.length > 0) {
+                console.log('[INFO] maxPortal is 0, clearing all portals');
+                this.data = [];
+                this.waveActive = false;
+            }
+            return;
+        }
 
         
         // Update existing portals
@@ -123,11 +132,20 @@ exports.PortalManager = class {
     }
 
     spawnWave(config) {
+        // Don't spawn portals if maxPortal is 0
+        if (config.maxPortal === 0) {
+            console.log('[INFO] maxPortal is 0, skipping portal wave spawn');
+            return;
+        }
+        
         // Clear any existing portals before spawning new wave
         this.data = [];
         
+        // Use the smaller of maxPortal and maxSimultaneous
+        const portalsToSpawn = Math.min(config.maxPortal, config.portal.maxSimultaneous);
+        
         // Spawn all portals for this wave simultaneously
-        for (let i = 0; i < config.portal.maxSimultaneous; i++) {
+        for (let i = 0; i < portalsToSpawn; i++) {
             const mass = util.randomInRange(config.portal.defaultMass.from, config.portal.defaultMass.to);
             const radius = util.massToRadius(mass);
             
