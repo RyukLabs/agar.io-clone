@@ -37,7 +37,7 @@ module.exports = {
     gameMass: 20000,
     maxFood: 1000,
     maxVirus: 50,
-    maxPortal: 15,
+    maxPortal: 0,
     slowBase: 4.5,
     logChat: 0,
     networkUpdateFactor: 60,
