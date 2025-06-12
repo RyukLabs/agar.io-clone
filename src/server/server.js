@@ -6,7 +6,20 @@ const app = express();
 const http = require('http').Server(app);
 const io = require('socket.io')(http);
 const SAT = require('sat');
+const Redis = require('ioredis');
+const redis = new Redis({
+  host: '127.0.0.1', // Redis server address
+  port: 6379,        // Redis port (default: 6379)
+});
+console.log(redis,'redisss')
+// Handle connection events
+redis.on('connect', () => {
+  console.log('Connected to Redis!');
+});
 
+redis.on('error', (err) => {
+  console.error('Redis error:', err);
+});
 const gameLogic = require('./game-logic');
 const loggingRepositry = require('./repositories/logging-repository');
 const chatRepository = require('./repositories/chat-repository');
@@ -53,7 +66,9 @@ function generateSpawnpoint() {
 const addPlayer = (socket) => {
     var currentPlayer = new mapUtils.playerUtils.Player(socket.id);
 
-    socket.on('gotit', function (clientPlayerData) {
+    socket.on('gotit', async function (clientPlayerData) {
+
+        try {
         console.log('[INFO] Player ' + clientPlayerData.name + ' connecting!');
         currentPlayer.init(generateSpawnpoint(), config.defaultPlayerMass);
 
@@ -71,11 +86,18 @@ const addPlayer = (socket) => {
             clientPlayerData.name = sanitizedName;
 
             currentPlayer.clientProvidedData(clientPlayerData);
+            // console.log(currentPlayer,'player data of game')
             map.players.pushNew(currentPlayer);
+         
+                // Add player to leaderboard in Redis
+            await redis.zadd('leaderboard', currentPlayer.massTotal, sanitizedName);
             io.emit('playerJoin', { name: currentPlayer.name });
             console.log('Total players: ' + map.players.data.length);
         }
-
+            
+        } catch (error) {
+            console.log("------------inside addd ", error)
+        }
     });
 
     socket.on('pingcheck', () => {
@@ -96,9 +118,13 @@ const addPlayer = (socket) => {
         console.log('[INFO] User ' + currentPlayer.name + ' has respawned');
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
         map.players.removePlayerByID(currentPlayer.id);
-        console.log('[INFO] User ' + currentPlayer.name + ' has disconnected');
+         // Remove player data from Redis
+        await redis.del(`player:${currentPlayer.id}`);
+
+        // Remove player from leaderboard in Redis
+        await redis.zrem('leaderboard', currentPlayer.name);
         socket.broadcast.emit('playerDisconnect', { name: currentPlayer.name });
     });
 
@@ -286,7 +312,9 @@ const tickGame = () => {
 
 };
 
-const calculateLeaderboard = () => {
+const calculateLeaderboard = async () => {
+    try {
+        
     const topPlayers = map.players.getTopPlayers();
 
     if (leaderboard.length !== topPlayers.length) {
@@ -300,6 +328,33 @@ const calculateLeaderboard = () => {
                 break;
             }
         }
+    }
+
+
+
+if (leaderboardChanged) {
+
+    await redis.del('leaderboard'); // Clear the current leaderboard
+
+    for (const player of leaderboard) {
+        const playerData = map.players.data.find(p => p.id === player.id);
+        if (!playerData) {
+            console.warn(`Player data not found for ID: ${player.id}`);
+            continue; // Skip if player data is missing
+        }
+
+        const massTotal = playerData.massTotal || 0; // Default to 0 if undefined
+        const name = player.name || 'Unknown Player';
+
+        // Update leaderboard
+        await redis.zadd('leaderboard', massTotal, name);
+        // Store player ID in a hash
+        await redis.hset('player_ids', name, player.id);
+    }
+}
+
+        } catch (error) {
+        console.log("=============calcualte leqaderboa", error)
     }
 }
 
@@ -324,10 +379,22 @@ const sendUpdates = () => {
     leaderboardChanged = false;
 };
 
-const sendLeaderboard = (socket) => {
+const sendLeaderboard = async (socket) => {
+      // Fetch leaderboard from Redisleaderboard
+  const redisLeaderboard = await redis.zrevrange('leaderboard', 0, -1, 'WITHSCORES');
+  const leaderboardData = [];
+
+   for (let i = 0; i < redisLeaderboard.length; i += 2) {
+    const name = redisLeaderboard[i];
+    const score = redisLeaderboard[i + 1];
+    const id = await redis.hget('player_ids', name);
+    leaderboardData.push({ id, name, score });
+ }
+
+
     socket.emit('leaderboard', {
         players: map.players.length,
-        leaderboard
+        leaderboard:  leaderboardData
     });
 }
 const updateSpectator = (socketID) => {
