@@ -295,7 +295,7 @@ const tickGame = () => {
     map.players.data.forEach(tickPlayer);
     map.massFood.move(config.gameWidth, config.gameHeight);
 
-    map.players.handleCollisions(function (gotEaten, eater) {
+    map.players.handleCollisions( async function (gotEaten, eater) {
         const cellGotEaten = map.players.getCell(gotEaten.playerIndex, gotEaten.cellIndex);
     // Adds the mass of the consumed cell to the eater’s cell.
     // Uses the changeCellMass function to update the eater's cell.
@@ -305,6 +305,8 @@ const tickGame = () => {
             let playerGotEaten = map.players.data[gotEaten.playerIndex];
             const allPlayerData = map.players.data
             io.emit('playerDied', { name: playerGotEaten.name }); 
+            // await redis.del(`player:${playerGotEaten.id}`);
+             await redis.zrem('leaderboard', playerGotEaten.name);
             sockets[playerGotEaten.id].emit('RIP', playerGotEaten , allPlayerData , cellGotEaten.mass);
             map.players.removePlayerByIndex(gotEaten.playerIndex);
         }
@@ -333,8 +335,6 @@ const calculateLeaderboard = async () => {
 
 
 if (leaderboardChanged) {
-
-    await redis.del('leaderboard'); // Clear the current leaderboard
 
     for (const player of leaderboard) {
         const playerData = map.players.data.find(p => p.id === player.id);
@@ -368,6 +368,7 @@ const gameloop = () => {
 };
 
 const sendUpdates = () => {
+
     spectators.forEach(updateSpectator);
     map.enumerateWhatPlayersSee(function (playerData, visiblePlayers, visibleFood, visibleMass, visibleViruses) {
         sockets[playerData.id].emit('serverTellPlayerMove', playerData, visiblePlayers, visibleFood, visibleMass, visibleViruses);
@@ -379,10 +380,13 @@ const sendUpdates = () => {
     leaderboardChanged = false;
 };
 
+
 const sendLeaderboard = async (socket) => {
       // Fetch leaderboard from Redisleaderboard
-  const redisLeaderboard = await redis.zrevrange('leaderboard', 0, -1, 'WITHSCORES');
+  const redisLeaderboard = await redis.zrevrange('leaderboard', 0, 9, 'WITHSCORES');
+  // get here for the 
   const leaderboardData = [];
+  console.log(redisLeaderboard, "redis leaderboarddddddddd")
 
    for (let i = 0; i < redisLeaderboard.length; i += 2) {
     const name = redisLeaderboard[i];
