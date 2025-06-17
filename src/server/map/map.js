@@ -42,18 +42,8 @@ exports.Map = class {
     }
 
     enumerateWhatPlayersSee(callback) {
-        // Update spatial grid once per frame (major performance optimization)
-        this.spatialGrid.clear();
-        this.spatialGrid.addEntities(this.food.data, 'food');
-        this.spatialGrid.addEntities(this.viruses.data, 'virus');
-        this.spatialGrid.addEntities(this.massFood.data, 'mass');
-        
-        // Add all player cells to spatial grid
-        for (let player of this.players.data) {
-            for (let cell of player.cells) {
-                this.spatialGrid.addEntity(cell, 'player', player);
-            }
-        }
+        // 🚀 SPATIAL GRID ALREADY UPDATED IN tickGame - just use it!
+        // No need to rebuild, saves massive performance
         
         const extractData = (player) => {
             return {
