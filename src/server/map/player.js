@@ -3,6 +3,7 @@
 const util = require('../lib/util');
 const sat = require('sat');
 const gameLogic = require('../game-logic');
+const { QuadTree, Rectangle, Point } = require('../lib/quadtree');
 
 const MIN_SPEED = 6.25;
 const SPLIT_CELL_SPEED = 20;
@@ -279,6 +280,15 @@ exports.Player = class {
 exports.PlayerManager = class {
     constructor() {
         this.data = [];
+        // Initialize spatial partitioning for high-performance collision detection
+        this.gameWidth = 5000;  // Will be set from config
+        this.gameHeight = 5000; // Will be set from config
+        this.quadTree = null;
+    }
+
+    setGameBounds(width, height) {
+        this.gameWidth = width;
+        this.gameHeight = height;
     }
 
     pushNew(player) {
@@ -315,15 +325,77 @@ exports.PlayerManager = class {
     }
 
     handleCollisions(callback) {
-        for (let playerAIndex = 0; playerAIndex < this.data.length; playerAIndex++) {
-            for (let playerBIndex = playerAIndex + 1; playerBIndex < this.data.length; playerBIndex++) {
-                exports.Player.checkForCollisions(
-                    this.data[playerAIndex],
-                    this.data[playerBIndex],
-                    playerAIndex,
-                    playerBIndex,
-                    callback
-                );
+        // HIGH-PERFORMANCE: O(n log n) spatial partitioning replaces O(n²) brute force
+        
+        // Create new quadtree for this frame
+        const boundary = new Rectangle(this.gameWidth / 2, this.gameHeight / 2, this.gameWidth / 2, this.gameHeight / 2);
+        this.quadTree = new QuadTree(boundary, 8, 6); // Optimized for 100-200 players
+        
+        // Insert all player cells into spatial partitioning
+        const playerCellMap = new Map();
+        for (let playerIndex = 0; playerIndex < this.data.length; playerIndex++) {
+            const player = this.data[playerIndex];
+            for (let cellIndex = 0; cellIndex < player.cells.length; cellIndex++) {
+                const cell = player.cells[cellIndex];
+                const point = new Point(cell.x, cell.y, {
+                    playerIndex,
+                    cellIndex,
+                    player,
+                    cell
+                });
+                this.quadTree.insert(point);
+                
+                // Keep reference for collision checking
+                if (!playerCellMap.has(playerIndex)) {
+                    playerCellMap.set(playerIndex, []);
+                }
+                playerCellMap.get(playerIndex).push({
+                    cellIndex,
+                    cell,
+                    point
+                });
+            }
+        }
+        
+        // Check collisions only between nearby cells (spatial locality)
+        const checkedPairs = new Set();
+        
+        for (let playerIndex = 0; playerIndex < this.data.length; playerIndex++) {
+            const playerCells = playerCellMap.get(playerIndex);
+            if (!playerCells) continue;
+            
+            for (let cellData of playerCells) {
+                const { cell, point } = cellData;
+                
+                // Query nearby cells within collision range
+                const searchRadius = cell.radius * 2; // Collision detection radius
+                const nearbyPoints = this.quadTree.queryCircle(point, searchRadius);
+                
+                // Check collisions with nearby cells from other players
+                for (let nearbyPoint of nearbyPoints) {
+                    const nearbyData = nearbyPoint.userData;
+                    
+                    // Skip same player
+                    if (nearbyData.playerIndex === playerIndex) continue;
+                    
+                    // Create unique pair ID to avoid duplicate checks
+                    const pairKey = `${playerIndex}-${cellData.cellIndex}-${nearbyData.playerIndex}-${nearbyData.cellIndex}`;
+                    const reversePairKey = `${nearbyData.playerIndex}-${nearbyData.cellIndex}-${playerIndex}-${cellData.cellIndex}`;
+                    
+                    if (checkedPairs.has(pairKey) || checkedPairs.has(reversePairKey)) {
+                        continue;
+                    }
+                    checkedPairs.add(pairKey);
+                    
+                    // Perform actual collision detection
+                    exports.Player.checkForCollisions(
+                        this.data[playerIndex],
+                        this.data[nearbyData.playerIndex],
+                        playerIndex,
+                        nearbyData.playerIndex,
+                        callback
+                    );
+                }
             }
         }
     }
