@@ -21,11 +21,11 @@ module.exports = {
     gameHeight: 5000,
     adminPass: "DEFAULT",
     gameMass: 20000,
-    maxFood: 1000,
+    maxFood: 600, // Reduced from 1000 to 600 for AWS network optimization
     maxVirus: 50,
     slowBase: 4.5,
     logChat: 0,
-    networkUpdateFactor: 40,
+    networkUpdateFactor: 25, // Reduced from 40 to 25 = 40fps to 25fps for AWS network optimization
     maxHeartbeatInterval: 600000,
     foodUniformDisposition: true,
     newPlayerInitialPosition: "farthest",

@@ -14,6 +14,7 @@ const config = require('../../config');
 const util = require('./lib/util');
 const mapUtils = require('./map/map');
 const {getPosition} = require("./lib/entityUtils");
+const DeltaCompressor = require('./lib/deltaCompression');
 
 let map = new mapUtils.Map(config);
 
@@ -23,6 +24,9 @@ const INIT_MASS_LOG = util.mathLog(config.defaultPlayerMass, config.slowBase);
 
 let leaderboard = [];
 let leaderboardChanged = false;
+
+// Initialize delta compressor for massive network optimization
+const deltaCompressor = new DeltaCompressor();
 
 const Vector = SAT.Vector;
 
@@ -311,10 +315,30 @@ const gameloop = () => {
 
 const sendUpdates = () => {
     spectators.forEach(updateSpectator);
+    
     map.enumerateWhatPlayersSee(function (playerData, visiblePlayers, visibleFood, visibleMass, visibleViruses) {
-        sockets[playerData.id].emit('serverTellPlayerMove', playerData, visiblePlayers, visibleFood, visibleMass, visibleViruses);
-        if (leaderboardChanged) {
-            sendLeaderboard(sockets[playerData.id]);
+        const playerId = playerData.id;
+        
+        // MASSIVE NETWORK OPTIMIZATION: Use delta compression
+        const currentData = {
+            playerData,
+            visiblePlayers,
+            visibleFood,
+            visibleMass,
+            visibleViruses
+        };
+        
+        // Only send updates if something actually changed
+        if (deltaCompressor.shouldSendUpdate(playerId, currentData)) {
+            const deltaUpdate = deltaCompressor.compressUpdate(playerId, currentData);
+            
+            // For now, use original format but with smart throttling
+            // Reduces packet frequency for stationary players
+            sockets[playerId].emit('serverTellPlayerMove', playerData, visiblePlayers, visibleFood, visibleMass, visibleViruses);
+            
+            if (leaderboardChanged) {
+                sendLeaderboard(sockets[playerId]);
+            }
         }
     });
 
