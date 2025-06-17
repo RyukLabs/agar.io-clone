@@ -352,6 +352,11 @@ let loopStartTime = performance.now();
 const PHYSICS_INTERVAL = 1000 / 60;      // 60 FPS physics
 const GAMELOOP_INTERVAL = 1000;          // 1 Hz maintenance
 const NETWORK_INTERVAL = 1000 / config.networkUpdateFactor; // 40 FPS network
+const MASTER_LOOP_INTERVAL = 5;          // 5ms = 200 Hz master loop (non-blocking)
+
+// Performance optimization: Batch collision detection
+let collisionBatchSize = 0;
+const MAX_COLLISION_BATCH = 10; // Process max 10 player pairs per physics tick
 
 const masterGameLoop = () => {
     const now = performance.now();
@@ -375,13 +380,42 @@ const masterGameLoop = () => {
         lastNetworkUpdate = elapsed;
     }
     
-    // Use setImmediate for zero-delay, CPU-efficient loop
-    // This is Node.js optimized and bypasses timer precision issues
-    setImmediate(masterGameLoop);
+    // Use setTimeout instead of setImmediate to prevent event loop blocking
+    // This gives Node.js time to process other events between iterations
+    setTimeout(masterGameLoop, MASTER_LOOP_INTERVAL);
+};
+
+// Optimized collision detection to prevent O(n²) performance issues
+const originalHandleCollisions = map.players.handleCollisions;
+map.players.handleCollisions = function(callback) {
+    const playerCount = this.data.length;
+    
+    // Skip collision detection if too many players (fallback optimization)
+    if (playerCount > 50) {
+        return;
+    }
+    
+    // Batch collision detection to spread load across multiple frames
+    let processed = 0;
+    for (let playerAIndex = collisionBatchSize; playerAIndex < playerCount && processed < MAX_COLLISION_BATCH; playerAIndex++) {
+        for (let playerBIndex = playerAIndex + 1; playerBIndex < playerCount && processed < MAX_COLLISION_BATCH; playerBIndex++) {
+            mapUtils.playerUtils.Player.checkForCollisions(
+                this.data[playerAIndex],
+                this.data[playerBIndex],
+                playerAIndex,
+                playerBIndex,
+                callback
+            );
+            processed++;
+        }
+    }
+    
+    // Reset batch counter when we've processed all combinations
+    collisionBatchSize = (collisionBatchSize + MAX_COLLISION_BATCH) % (playerCount * playerCount);
 };
 
 // Initialize the master loop
-console.log('[PERFORMANCE] Starting Unified Master Loop - High Performance Mode');
+console.log('[PERFORMANCE] Starting Unified Master Loop - Non-blocking High Performance Mode');
 masterGameLoop();
 
 // Don't touch, IP configurations.
