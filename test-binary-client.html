@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Binary WebSocket Test Client</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .stats { background: #f0f0f0; padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .binary { background: #e8f5e8; }
+        .socketio { background: #fff8e8; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        #output { height: 300px; overflow-y: scroll; background: #f8f8f8; padding: 10px; font-family: monospace; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <h1>Agar.io Performance Test: Binary WebSocket vs Socket.IO</h1>
+    
+    <div class="stats binary">
+        <h3>Binary WebSocket (agar.io-style)</h3>
+        <div>Status: <span id="binary-status">Disconnected</span></div>
+        <div>Messages Received: <span id="binary-messages">0</span></div>
+        <div>Average Latency: <span id="binary-latency">0ms</span></div>
+        <div>Data Rate: <span id="binary-rate">0 KB/s</span></div>
+        <button onclick="connectBinary()">Connect Binary</button>
+        <button onclick="disconnectBinary()">Disconnect</button>
+    </div>
+
+    <div class="stats socketio">
+        <h3>Socket.IO (current implementation)</h3>
+        <div>Status: <span id="socketio-status">Disconnected</span></div>
+        <div>Messages Received: <span id="socketio-messages">0</span></div>
+        <div>Average Latency: <span id="socketio-latency">0ms</span></div>
+        <div>Data Rate: <span id="socketio-rate">0 KB/s</span></div>
+        <button onclick="connectSocketIO()">Connect Socket.IO</button>
+        <button onclick="disconnectSocketIO()">Disconnect</button>
+    </div>
+
+    <div>
+        <button onclick="startPerformanceTest()">Start Performance Test</button>
+        <button onclick="clearOutput()">Clear Output</button>
+    </div>
+
+    <div id="output"></div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        // Binary WebSocket Implementation
+        let binaryWS = null;
+        let binaryStats = {
+            messages: 0,
+            totalBytes: 0,
+            latencies: [],
+            startTime: null,
+            lastPing: null
+        };
+
+        // Socket.IO Implementation  
+        let socketIOClient = null;
+        let socketIOStats = {
+            messages: 0,
+            totalBytes: 0,
+            latencies: [],
+            startTime: null,
+            lastPing: null
+        };
+
+        // Binary Protocol Constants (matching server)
+        const OPCODES = {
+            SPAWN: 0x00,
+            SET_TARGET: 0x10,
+            SPLIT: 0x11,
+            EJECT_MASS: 0x15,
+            WORLD_UPDATE: 0x10,
+            ADD_CELL: 0x20,
+            RESET: 0x12
+        };
+
+        function log(message) {
+            const output = document.getElementById('output');
+            const timestamp = new Date().toLocaleTimeString();
+            output.innerHTML += `[${timestamp}] ${message}\n`;
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function connectBinary() {
+            if (binaryWS) {
+                binaryWS.close();
+            }
+
+            binaryWS = new WebSocket('ws://localhost:3000/binary');
+            binaryWS.binaryType = 'arraybuffer';
+            
+            binaryWS.onopen = () => {
+                document.getElementById('binary-status').textContent = 'Connected';
+                binaryStats.startTime = Date.now();
+                log('Binary WebSocket connected');
+                
+                // Send spawn message
+                const spawnMessage = createSpawnMessage('BinaryPlayer');
+                binaryWS.send(spawnMessage);
+                
+                // Start sending movement updates
+                setInterval(() => {
+                    if (binaryWS.readyState === WebSocket.OPEN) {
+                        const targetMessage = createTargetMessage(
+                            Math.random() * 1000,
+                            Math.random() * 1000
+                        );
+                        binaryWS.send(targetMessage);
+                        binaryStats.lastPing = Date.now();
+                    }
+                }, 50); // 20fps input
+            };
+
+            binaryWS.onmessage = (event) => {
+                const now = Date.now();
+                if (binaryStats.lastPing) {
+                    const latency = now - binaryStats.lastPing;
+                    binaryStats.latencies.push(latency);
+                }
+                
+                binaryStats.messages++;
+                binaryStats.totalBytes += event.data.byteLength;
+                
+                updateBinaryStats();
+                
+                // Parse the binary message to verify it's working
+                const data = new DataView(event.data);
+                const opcode = data.getUint8(0);
+                
+                if (opcode === OPCODES.WORLD_UPDATE) {
+                    // Successfully received world update
+                    log(`Binary: Received world update (${event.data.byteLength} bytes)`);
+                }
+            };
+
+            binaryWS.onclose = () => {
+                document.getElementById('binary-status').textContent = 'Disconnected';
+                log('Binary WebSocket disconnected');
+            };
+
+            binaryWS.onerror = (error) => {
+                log('Binary WebSocket error: ' + error);
+            };
+        }
+
+        function connectSocketIO() {
+            if (socketIOClient) {
+                socketIOClient.disconnect();
+            }
+
+            socketIOClient = io('http://localhost:3000');
+            socketIOStats.startTime = Date.now();
+            
+            socketIOClient.on('connect', () => {
+                document.getElementById('socketio-status').textContent = 'Connected';
+                log('Socket.IO connected');
+                
+                // Send spawn message
+                socketIOClient.emit('respawn', { name: 'SocketIOPlayer' });
+                
+                // Start sending movement updates
+                setInterval(() => {
+                    if (socketIOClient.connected) {
+                        socketIOClient.emit('0', {
+                            x: Math.random() * 1000,
+                            y: Math.random() * 1000
+                        });
+                        socketIOStats.lastPing = Date.now();
+                    }
+                }, 50); // 20fps input
+            });
+
+            socketIOClient.on('serverTellPlayerMove', (playerData, visiblePlayers, visibleFood, visibleMass, visibleViruses) => {
+                const now = Date.now();
+                if (socketIOStats.lastPing) {
+                    const latency = now - socketIOStats.lastPing;
+                    socketIOStats.latencies.push(latency);
+                }
+                
+                socketIOStats.messages++;
+                
+                // Estimate JSON size
+                const jsonSize = JSON.stringify({
+                    playerData,
+                    visiblePlayers,
+                    visibleFood,
+                    visibleMass,
+                    visibleViruses
+                }).length;
+                
+                socketIOStats.totalBytes += jsonSize;
+                updateSocketIOStats();
+                
+                log(`Socket.IO: Received game state (~${jsonSize} bytes)`);
+            });
+
+            socketIOClient.on('disconnect', () => {
+                document.getElementById('socketio-status').textContent = 'Disconnected';
+                log('Socket.IO disconnected');
+            });
+        }
+
+        function createSpawnMessage(name) {
+            const nameBytes = new TextEncoder().encode(name);
+            const buffer = new ArrayBuffer(1 + nameBytes.length);
+            const view = new DataView(buffer);
+            
+            view.setUint8(0, OPCODES.SPAWN);
+            const byteArray = new Uint8Array(buffer);
+            byteArray.set(nameBytes, 1);
+            
+            return buffer;
+        }
+
+        function createTargetMessage(x, y) {
+            const buffer = new ArrayBuffer(9);
+            const view = new DataView(buffer);
+            
+            view.setUint8(0, OPCODES.SET_TARGET);
+            view.setInt32(1, Math.round(x), true);
+            view.setInt32(5, Math.round(y), true);
+            
+            return buffer;
+        }
+
+        function updateBinaryStats() {
+            document.getElementById('binary-messages').textContent = binaryStats.messages;
+            
+            if (binaryStats.latencies.length > 0) {
+                const avgLatency = binaryStats.latencies.reduce((a, b) => a + b, 0) / binaryStats.latencies.length;
+                document.getElementById('binary-latency').textContent = Math.round(avgLatency) + 'ms';
+            }
+            
+            if (binaryStats.startTime) {
+                const elapsed = (Date.now() - binaryStats.startTime) / 1000;
+                const rate = (binaryStats.totalBytes / elapsed / 1024).toFixed(2);
+                document.getElementById('binary-rate').textContent = rate + ' KB/s';
+            }
+        }
+
+        function updateSocketIOStats() {
+            document.getElementById('socketio-messages').textContent = socketIOStats.messages;
+            
+            if (socketIOStats.latencies.length > 0) {
+                const avgLatency = socketIOStats.latencies.reduce((a, b) => a + b, 0) / socketIOStats.latencies.length;
+                document.getElementById('socketio-latency').textContent = Math.round(avgLatency) + 'ms';
+            }
+            
+            if (socketIOStats.startTime) {
+                const elapsed = (Date.now() - socketIOStats.startTime) / 1000;
+                const rate = (socketIOStats.totalBytes / elapsed / 1024).toFixed(2);
+                document.getElementById('socketio-rate').textContent = rate + ' KB/s';
+            }
+        }
+
+        function disconnectBinary() {
+            if (binaryWS) {
+                binaryWS.close();
+            }
+        }
+
+        function disconnectSocketIO() {
+            if (socketIOClient) {
+                socketIOClient.disconnect();
+            }
+        }
+
+        function startPerformanceTest() {
+            log('=== Starting Performance Test ===');
+            log('Connecting both clients for 30 seconds...');
+            
+            // Reset stats
+            binaryStats = { messages: 0, totalBytes: 0, latencies: [], startTime: null, lastPing: null };
+            socketIOStats = { messages: 0, totalBytes: 0, latencies: [], startTime: null, lastPing: null };
+            
+            connectBinary();
+            connectSocketIO();
+            
+            setTimeout(() => {
+                log('=== Performance Test Results ===');
+                log(`Binary WebSocket: ${binaryStats.messages} messages, ${(binaryStats.totalBytes/1024).toFixed(2)} KB total`);
+                log(`Socket.IO: ${socketIOStats.messages} messages, ${(socketIOStats.totalBytes/1024).toFixed(2)} KB total`);
+                
+                if (binaryStats.latencies.length > 0 && socketIOStats.latencies.length > 0) {
+                    const binaryAvg = binaryStats.latencies.reduce((a, b) => a + b, 0) / binaryStats.latencies.length;
+                    const socketIOAvg = socketIOStats.latencies.reduce((a, b) => a + b, 0) / socketIOStats.latencies.length;
+                    
+                    log(`Average Latency - Binary: ${Math.round(binaryAvg)}ms, Socket.IO: ${Math.round(socketIOAvg)}ms`);
+                    log(`Performance Improvement: ${(socketIOAvg / binaryAvg).toFixed(2)}x faster with binary`);
+                }
+            }, 30000);
+        }
+
+        function clearOutput() {
+            document.getElementById('output').innerHTML = '';
+        }
+    </script>
+</body>
+</html> 
