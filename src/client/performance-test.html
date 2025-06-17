@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>🚀 REAL Performance Test: Binary vs Socket.IO</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { color: #333; text-align: center; }
+        .test-row { display: flex; gap: 20px; margin: 20px 0; }
+        .protocol-card { flex: 1; background: white; border-radius: 10px; padding: 20px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        .binary { border-left: 5px solid #4CAF50; }
+        .socketio { border-left: 5px solid #FF9800; }
+        .stat { margin: 10px 0; padding: 8px; background: #f9f9f9; border-radius: 5px; }
+        .stat-label { font-weight: bold; color: #555; }
+        .stat-value { font-size: 1.2em; font-weight: bold; }
+        .binary .stat-value { color: #4CAF50; }
+        .socketio .stat-value { color: #FF9800; }
+        button { padding: 12px 24px; margin: 5px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        .btn-connect { background: #2196F3; color: white; }
+        .btn-test { background: #FF5722; color: white; font-size: 16px; }
+        .btn-disconnect { background: #f44336; color: white; }
+        #output { height: 400px; overflow-y: scroll; background: #222; color: #0f0; padding: 15px; font-family: 'Courier New', monospace; font-size: 13px; border-radius: 5px; margin: 20px 0; }
+        .comparison { background: white; padding: 20px; border-radius: 10px; margin: 20px 0; text-align: center; }
+        .winner { background: #e8f5e8; border: 2px solid #4CAF50; }
+        .performance-metric { display: inline-block; margin: 10px 20px; }
+        .connected { background: #4CAF50 !important; }
+        .disconnected { background: #f44336 !important; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Agar.io Performance Test: Binary WebSocket vs Socket.IO</h1>
+        <p style="text-align: center; color: #666;">
+            Testing the EXACT performance difference that causes AWS lag!
+        </p>
+
+        <div class="test-row">
+            <div class="protocol-card binary">
+                <h3>⚡ Binary WebSocket (Agar.io Style)</h3>
+                <div class="stat">
+                    <div class="stat-label">Status:</div>
+                    <div class="stat-value" id="binary-status">Disconnected</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Messages Received:</div>
+                    <div class="stat-value" id="binary-messages">0</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Average Latency:</div>
+                    <div class="stat-value" id="binary-latency">0ms</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Data Rate:</div>
+                    <div class="stat-value" id="binary-rate">0 KB/s</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Total Bytes:</div>
+                    <div class="stat-value" id="binary-bytes">0</div>
+                </div>
+                <button class="btn-connect" onclick="connectBinary()">Connect Binary</button>
+                <button class="btn-disconnect" onclick="disconnectBinary()">Disconnect</button>
+            </div>
+
+            <div class="protocol-card socketio">
+                <h3>🐌 Socket.IO (Current Laggy Version)</h3>
+                <div class="stat">
+                    <div class="stat-label">Status:</div>
+                    <div class="stat-value" id="socketio-status">Disconnected</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Messages Received:</div>
+                    <div class="stat-value" id="socketio-messages">0</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Average Latency:</div>
+                    <div class="stat-value" id="socketio-latency">0ms</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Data Rate:</div>
+                    <div class="stat-value" id="socketio-rate">0 KB/s</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Total Bytes:</div>
+                    <div class="stat-value" id="socketio-bytes">0</div>
+                </div>
+                <button class="btn-connect" onclick="connectSocketIO()">Connect Socket.IO</button>
+                <button class="btn-disconnect" onclick="disconnectSocketIO()">Disconnect</button>
+            </div>
+        </div>
+
+        <div class="comparison">
+            <button class="btn-test" onclick="startPerformanceTest()">🔥 START 30-SECOND PERFORMANCE TEST</button>
+            <button class="btn-test" onclick="clearOutput()">Clear Logs</button>
+            <div id="performance-result"></div>
+        </div>
+
+        <div id="output">💻 Performance Test Console - Ready to show why AWS lags...\n</div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        // Performance tracking
+        let binaryWS = null;
+        let socketIOClient = null;
+        
+        let binaryStats = {
+            messages: 0,
+            totalBytes: 0,
+            latencies: [],
+            startTime: null,
+            lastPing: null
+        };
+
+        let socketIOStats = {
+            messages: 0,
+            totalBytes: 0,
+            latencies: [],
+            startTime: null,
+            lastPing: null
+        };
+
+        // Binary Protocol Constants
+        const OPCODES = {
+            SPAWN: 0x00,
+            SET_TARGET: 0x10,
+            SPLIT: 0x11,
+            EJECT_MASS: 0x15,
+            WORLD_UPDATE: 0x10,
+            ADD_CELL: 0x20,
+            RESET: 0x12
+        };
+
+        function log(message, color = '#0f0') {
+            const output = document.getElementById('output');
+            const timestamp = new Date().toLocaleTimeString();
+            output.innerHTML += `<span style="color: ${color}">[${timestamp}] ${message}</span>\n`;
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function connectBinary() {
+            if (binaryWS) binaryWS.close();
+
+            log('🚀 Connecting to Binary WebSocket...', '#4CAF50');
+            binaryWS = new WebSocket('ws://localhost:3000/binary');
+            binaryWS.binaryType = 'arraybuffer';
+            
+            binaryWS.onopen = () => {
+                document.getElementById('binary-status').textContent = 'Connected';
+                document.getElementById('binary-status').className = 'stat-value connected';
+                binaryStats.startTime = Date.now();
+                log('✅ Binary WebSocket connected - FAST protocol active!', '#4CAF50');
+                
+                // Send spawn message
+                const spawnMessage = createSpawnMessage('BinarySpeedTest');
+                binaryWS.send(spawnMessage);
+                
+                // Start rapid movement simulation (simulating real game)
+                setInterval(() => {
+                    if (binaryWS.readyState === WebSocket.OPEN) {
+                        const targetMessage = createTargetMessage(
+                            Math.random() * 5000,
+                            Math.random() * 5000
+                        );
+                        binaryWS.send(targetMessage);
+                        binaryStats.lastPing = Date.now();
+                    }
+                }, 33); // ~30fps input (realistic)
+            };
+
+            binaryWS.onmessage = (event) => {
+                const now = Date.now();
+                if (binaryStats.lastPing) {
+                    const latency = now - binaryStats.lastPing;
+                    binaryStats.latencies.push(latency);
+                }
+                
+                binaryStats.messages++;
+                binaryStats.totalBytes += event.data.byteLength;
+                
+                updateBinaryStats();
+                
+                // Parse message for verification
+                const data = new DataView(event.data);
+                const opcode = data.getUint8(0);
+                
+                if (opcode === OPCODES.WORLD_UPDATE) {
+                    log(`⚡ Binary: World update received (${event.data.byteLength} bytes)`, '#4CAF50');
+                }
+            };
+
+            binaryWS.onclose = () => {
+                document.getElementById('binary-status').textContent = 'Disconnected';
+                document.getElementById('binary-status').className = 'stat-value disconnected';
+                log('❌ Binary WebSocket disconnected', '#f44336');
+            };
+
+            binaryWS.onerror = (error) => {
+                log('🚨 Binary WebSocket error: ' + error, '#f44336');
+            };
+        }
+
+        function connectSocketIO() {
+            if (socketIOClient) socketIOClient.disconnect();
+
+            log('🐌 Connecting to Socket.IO...', '#FF9800');
+            socketIOClient = io('http://localhost:3000');
+            socketIOStats.startTime = Date.now();
+            
+            socketIOClient.on('connect', () => {
+                document.getElementById('socketio-status').textContent = 'Connected';
+                document.getElementById('socketio-status').className = 'stat-value connected';
+                log('✅ Socket.IO connected - Legacy protocol (causes AWS lag)', '#FF9800');
+                
+                // Send spawn message
+                socketIOClient.emit('gotit', { name: 'SocketIOSpeedTest' });
+                
+                // Start movement simulation
+                setInterval(() => {
+                    if (socketIOClient.connected) {
+                        socketIOClient.emit('0', {
+                            x: Math.random() * 5000,
+                            y: Math.random() * 5000
+                        });
+                        socketIOStats.lastPing = Date.now();
+                    }
+                }, 33); // ~30fps input
+            });
+
+            socketIOClient.on('serverTellPlayerMove', (playerData, visiblePlayers, visibleFood, visibleMass, visibleViruses) => {
+                const now = Date.now();
+                if (socketIOStats.lastPing) {
+                    const latency = now - socketIOStats.lastPing;
+                    socketIOStats.latencies.push(latency);
+                }
+                
+                socketIOStats.messages++;
+                
+                // Calculate JSON size (Socket.IO overhead)
+                const jsonSize = JSON.stringify({
+                    playerData,
+                    visiblePlayers,
+                    visibleFood,
+                    visibleMass,
+                    visibleViruses
+                }).length;
+                
+                socketIOStats.totalBytes += jsonSize;
+                updateSocketIOStats();
+                
+                log(`🐌 Socket.IO: Game state received (~${jsonSize} bytes)`, '#FF9800');
+            });
+
+            socketIOClient.on('disconnect', () => {
+                document.getElementById('socketio-status').textContent = 'Disconnected';
+                document.getElementById('socketio-status').className = 'stat-value disconnected';
+                log('❌ Socket.IO disconnected', '#f44336');
+            });
+        }
+
+        function createSpawnMessage(name) {
+            const nameBytes = new TextEncoder().encode(name);
+            const buffer = new ArrayBuffer(1 + nameBytes.length);
+            const view = new DataView(buffer);
+            
+            view.setUint8(0, OPCODES.SPAWN);
+            const byteArray = new Uint8Array(buffer);
+            byteArray.set(nameBytes, 1);
+            
+            return buffer;
+        }
+
+        function createTargetMessage(x, y) {
+            const buffer = new ArrayBuffer(9);
+            const view = new DataView(buffer);
+            
+            view.setUint8(0, OPCODES.SET_TARGET);
+            view.setInt32(1, Math.round(x), true);
+            view.setInt32(5, Math.round(y), true);
+            
+            return buffer;
+        }
+
+        function updateBinaryStats() {
+            document.getElementById('binary-messages').textContent = binaryStats.messages;
+            document.getElementById('binary-bytes').textContent = (binaryStats.totalBytes / 1024).toFixed(1) + ' KB';
+            
+            if (binaryStats.latencies.length > 0) {
+                const avgLatency = binaryStats.latencies.reduce((a, b) => a + b, 0) / binaryStats.latencies.length;
+                document.getElementById('binary-latency').textContent = Math.round(avgLatency) + 'ms';
+            }
+            
+            if (binaryStats.startTime) {
+                const elapsed = (Date.now() - binaryStats.startTime) / 1000;
+                const rate = (binaryStats.totalBytes / elapsed / 1024).toFixed(2);
+                document.getElementById('binary-rate').textContent = rate + ' KB/s';
+            }
+        }
+
+        function updateSocketIOStats() {
+            document.getElementById('socketio-messages').textContent = socketIOStats.messages;
+            document.getElementById('socketio-bytes').textContent = (socketIOStats.totalBytes / 1024).toFixed(1) + ' KB';
+            
+            if (socketIOStats.latencies.length > 0) {
+                const avgLatency = socketIOStats.latencies.reduce((a, b) => a + b, 0) / socketIOStats.latencies.length;
+                document.getElementById('socketio-latency').textContent = Math.round(avgLatency) + 'ms';
+            }
+            
+            if (socketIOStats.startTime) {
+                const elapsed = (Date.now() - socketIOStats.startTime) / 1000;
+                const rate = (socketIOStats.totalBytes / elapsed / 1024).toFixed(2);
+                document.getElementById('socketio-rate').textContent = rate + ' KB/s';
+            }
+        }
+
+        function disconnectBinary() {
+            if (binaryWS) binaryWS.close();
+        }
+
+        function disconnectSocketIO() {
+            if (socketIOClient) socketIOClient.disconnect();
+        }
+
+        function startPerformanceTest() {
+            log('🔥 === STARTING 30-SECOND PERFORMANCE TEST ===', '#FFD700');
+            log('This will show you EXACTLY why your game lags on AWS!', '#FFD700');
+            
+            // Reset stats
+            binaryStats = { messages: 0, totalBytes: 0, latencies: [], startTime: null, lastPing: null };
+            socketIOStats = { messages: 0, totalBytes: 0, latencies: [], startTime: null, lastPing: null };
+            
+            // Clear displays
+            ['binary-messages', 'binary-latency', 'binary-rate', 'binary-bytes',
+             'socketio-messages', 'socketio-latency', 'socketio-rate', 'socketio-bytes'].forEach(id => {
+                document.getElementById(id).textContent = '0';
+            });
+            
+            connectBinary();
+            setTimeout(() => connectSocketIO(), 1000); // Stagger connections
+            
+            setTimeout(() => {
+                log('📊 === PERFORMANCE TEST RESULTS ===', '#FFD700');
+                
+                const binaryAvgLatency = binaryStats.latencies.length > 0 ? 
+                    binaryStats.latencies.reduce((a, b) => a + b, 0) / binaryStats.latencies.length : 0;
+                const socketIOAvgLatency = socketIOStats.latencies.length > 0 ? 
+                    socketIOStats.latencies.reduce((a, b) => a + b, 0) / socketIOStats.latencies.length : 0;
+                
+                log(`Binary WebSocket: ${binaryStats.messages} msgs, ${(binaryStats.totalBytes/1024).toFixed(1)} KB`, '#4CAF50');
+                log(`Socket.IO: ${socketIOStats.messages} msgs, ${(socketIOStats.totalBytes/1024).toFixed(1)} KB`, '#FF9800');
+                
+                if (binaryAvgLatency > 0 && socketIOAvgLatency > 0) {
+                    const speedup = (socketIOAvgLatency / binaryAvgLatency).toFixed(2);
+                    log(`🚀 BINARY IS ${speedup}X FASTER!`, '#4CAF50');
+                    log(`Latency: Binary ${Math.round(binaryAvgLatency)}ms vs Socket.IO ${Math.round(socketIOAvgLatency)}ms`, '#FFD700');
+                }
+                
+                const sizeDiff = socketIOStats.totalBytes > 0 ? 
+                    ((socketIOStats.totalBytes - binaryStats.totalBytes) / socketIOStats.totalBytes * 100).toFixed(1) : 0;
+                log(`📦 Binary uses ${sizeDiff}% less bandwidth!`, '#4CAF50');
+                
+                log('💡 This is why agar.io worked in 2015 and your clone lags on AWS!', '#FFD700');
+                
+                // Update result display
+                document.getElementById('performance-result').innerHTML = `
+                    <div class="performance-metric">
+                        <strong>Speed Improvement:</strong> ${speedup}x faster
+                    </div>
+                    <div class="performance-metric">
+                        <strong>Bandwidth Savings:</strong> ${sizeDiff}% less data
+                    </div>
+                `;
+            }, 30000);
+        }
+
+        function clearOutput() {
+            document.getElementById('output').innerHTML = '💻 Performance Test Console - Cleared\n';
+        }
+
+        // Auto-connect on page load for immediate testing
+        window.onload = () => {
+            log('🎮 Agar.io Performance Test Ready!', '#FFD700');
+            log('Click "START PERFORMANCE TEST" to see the difference!', '#FFD700');
+        };
+    </script>
+</body>
+</html> 

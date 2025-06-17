@@ -5,6 +5,7 @@ const express = require('express');
 const app = express();
 const http = require('http').Server(app);
 const io = require('socket.io')(http);
+const WebSocket = require('ws');
 const SAT = require('sat');
 
 const gameLogic = require('./game-logic');
@@ -15,6 +16,7 @@ const util = require('./lib/util');
 const mapUtils = require('./map/map');
 const {getPosition} = require("./lib/entityUtils");
 const DeltaCompressor = require('./lib/deltaCompression');
+const BinaryProtocol = require('./lib/binaryProtocol');
 
 let map = new mapUtils.Map(config);
 
@@ -28,9 +30,92 @@ let leaderboardChanged = false;
 // Initialize delta compressor for massive network optimization
 const deltaCompressor = new DeltaCompressor();
 
+// Initialize binary protocol for high-performance clients
+const binaryProtocol = new BinaryProtocol();
+let binaryClients = new Map(); // clientId -> {ws, player}
+
 const Vector = SAT.Vector;
 
 app.use(express.static(__dirname + '/../client'));
+
+// Setup binary WebSocket server for high-performance clients
+const wss = new WebSocket.Server({ 
+    server: http,
+    path: '/binary'
+});
+
+wss.on('connection', function(ws, req) {
+    console.log('Binary WebSocket client connected');
+    ws.binaryType = 'arraybuffer';
+    
+    const clientId = 'ws_' + Math.random().toString(36).substr(2, 9);
+    let currentPlayer = null;
+    
+    binaryClients.set(clientId, { ws, player: null });
+    
+    ws.on('message', function(data) {
+        if (data instanceof ArrayBuffer) {
+            const parsed = binaryProtocol.parseClientMessage(data);
+            if (parsed) {
+                switch (parsed.type) {
+                    case 'SPAWN':
+                        currentPlayer = new mapUtils.playerUtils.Player(clientId);
+                        currentPlayer.init(generateSpawnpoint(), config.defaultPlayerMass);
+                        
+                        if (!util.validNick(parsed.name)) {
+                            ws.close(1000, 'Invalid username');
+                            return;
+                        }
+                        
+                        const sanitizedName = parsed.name.replace(/(<([^>]+)>)/ig, '');
+                        currentPlayer.clientProvidedData({ name: sanitizedName });
+                        map.players.pushNew(currentPlayer);
+                        binaryClients.get(clientId).player = currentPlayer;
+                        
+                        // Send reset confirmation
+                        ws.send(binaryProtocol.packReset());
+                        console.log('[INFO] Binary player ' + sanitizedName + ' spawned!');
+                        break;
+                        
+                    case 'SET_TARGET':
+                        if (currentPlayer) {
+                            currentPlayer.lastHeartbeat = new Date().getTime();
+                            if (parsed.x !== currentPlayer.x || parsed.y !== currentPlayer.y) {
+                                currentPlayer.target = { x: parsed.x, y: parsed.y };
+                            }
+                        }
+                        break;
+                        
+                    case 'SPLIT':
+                        if (currentPlayer) {
+                            currentPlayer.userSplit(config.limitSplit, config.defaultPlayerMass);
+                        }
+                        break;
+                        
+                    case 'EJECT_MASS':
+                        if (currentPlayer) {
+                            const minCellMass = config.defaultPlayerMass + config.fireFood;
+                            for (let i = 0; i < currentPlayer.cells.length; i++) {
+                                if (currentPlayer.cells[i].mass >= minCellMass) {
+                                    currentPlayer.changeCellMass(i, -config.fireFood);
+                                    map.massFood.addNew(currentPlayer, i, config.fireFood);
+                                }
+                            }
+                        }
+                        break;
+                }
+            }
+        }
+    });
+    
+    ws.on('close', function() {
+        if (currentPlayer) {
+            map.players.removePlayerByID(currentPlayer.id);
+            console.log('[INFO] Binary player ' + currentPlayer.name + ' disconnected');
+        }
+        binaryClients.delete(clientId);
+    });
+});
 
 io.on('connection', function (socket) {
     let type = socket.handshake.query.type;
@@ -319,25 +404,41 @@ const sendUpdates = () => {
     map.enumerateWhatPlayersSee(function (playerData, visiblePlayers, visibleFood, visibleMass, visibleViruses) {
         const playerId = playerData.id;
         
-        // MASSIVE NETWORK OPTIMIZATION: Use delta compression
-        const currentData = {
-            playerData,
-            visiblePlayers,
-            visibleFood,
-            visibleMass,
-            visibleViruses
-        };
+        // Check if this is a binary client
+        const binaryClient = Array.from(binaryClients.values()).find(client => 
+            client.player && client.player.id === playerId
+        );
         
-        // Only send updates if something actually changed
-        if (deltaCompressor.shouldSendUpdate(playerId, currentData)) {
-            const deltaUpdate = deltaCompressor.compressUpdate(playerId, currentData);
+        if (binaryClient && binaryClient.ws.readyState === WebSocket.OPEN) {
+            // Send high-performance binary update
+            try {
+                const binaryData = binaryProtocol.packWorldUpdate(
+                    visiblePlayers, 
+                    visibleFood, 
+                    visibleViruses, 
+                    visibleMass
+                );
+                binaryClient.ws.send(binaryData);
+            } catch (error) {
+                console.error('Error sending binary update:', error);
+            }
+        } else if (sockets[playerId]) {
+            // Send JSON update to Socket.IO clients (with optimization)
+            const currentData = {
+                playerData,
+                visiblePlayers,
+                visibleFood,
+                visibleMass,
+                visibleViruses
+            };
             
-            // For now, use original format but with smart throttling
-            // Reduces packet frequency for stationary players
-            sockets[playerId].emit('serverTellPlayerMove', playerData, visiblePlayers, visibleFood, visibleMass, visibleViruses);
-            
-            if (leaderboardChanged) {
-                sendLeaderboard(sockets[playerId]);
+            // Only send updates if something actually changed
+            if (deltaCompressor.shouldSendUpdate(playerId, currentData)) {
+                sockets[playerId].emit('serverTellPlayerMove', playerData, visiblePlayers, visibleFood, visibleMass, visibleViruses);
+                
+                if (leaderboardChanged) {
+                    sendLeaderboard(sockets[playerId]);
+                }
             }
         }
     });
