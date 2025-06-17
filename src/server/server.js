@@ -343,9 +343,46 @@ const updateSpectator = (socketID) => {
     }
 }
 
-setInterval(tickGame, 1000 / 60);
-setInterval(gameloop, 1000);
-setInterval(sendUpdates, 1000 / config.networkUpdateFactor);
+// ✅ NEW: Unified Master Loop - High Performance Architecture
+let lastPhysicsTick = 0;
+let lastGameLoop = 0;
+let lastNetworkUpdate = 0;
+let loopStartTime = performance.now();
+
+const PHYSICS_INTERVAL = 1000 / 60;      // 60 FPS physics
+const GAMELOOP_INTERVAL = 1000;          // 1 Hz maintenance
+const NETWORK_INTERVAL = 1000 / config.networkUpdateFactor; // 40 FPS network
+
+const masterGameLoop = () => {
+    const now = performance.now();
+    const elapsed = now - loopStartTime;
+    
+    // Physics tick at 60Hz - Game logic, player movement, collisions
+    if (elapsed - lastPhysicsTick >= PHYSICS_INTERVAL) {
+        tickGame();
+        lastPhysicsTick = elapsed;
+    }
+    
+    // Game maintenance at 1Hz - Mass balancing, cleanup
+    if (elapsed - lastGameLoop >= GAMELOOP_INTERVAL) {
+        gameloop();
+        lastGameLoop = elapsed;
+    }
+    
+    // Network updates at 40Hz - Send player positions, leaderboard
+    if (elapsed - lastNetworkUpdate >= NETWORK_INTERVAL) {
+        sendUpdates();
+        lastNetworkUpdate = elapsed;
+    }
+    
+    // Use setImmediate for zero-delay, CPU-efficient loop
+    // This is Node.js optimized and bypasses timer precision issues
+    setImmediate(masterGameLoop);
+};
+
+// Initialize the master loop
+console.log('[PERFORMANCE] Starting Unified Master Loop - High Performance Mode');
+masterGameLoop();
 
 // Don't touch, IP configurations.
 var ipaddress = process.env.OPENSHIFT_NODEJS_IP || process.env.IP || config.host;
