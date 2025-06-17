@@ -213,13 +213,28 @@ const addSpectator = (socket) => {
     });
 }
 
-const tickPlayer = (currentPlayer) => {
+    const tickPlayer = (currentPlayer) => {
     if (currentPlayer.lastHeartbeat < new Date().getTime() - config.maxHeartbeatInterval) {
         sockets[currentPlayer.id].emit('kick', 'Last heartbeat received over ' + config.maxHeartbeatInterval + ' ago.');
         sockets[currentPlayer.id].disconnect();
     }
 
     currentPlayer.move(config.slowBase, config.gameWidth, config.gameHeight, INIT_MASS_LOG);
+
+    // PERFORMANCE FIX: Use spatial partitioning for entity collision instead of O(n×m) loops
+    const boundary = new (require('./lib/quadtree')).Rectangle(config.gameWidth / 2, config.gameHeight / 2, config.gameWidth / 2, config.gameHeight / 2);
+    const entityQuadTree = new (require('./lib/quadtree')).QuadTree(boundary, 10, 5);
+    
+    // Insert all entities into spatial partitioning ONCE
+    map.food.data.forEach((food, index) => {
+        if (food) entityQuadTree.insert(new (require('./lib/quadtree')).Point(food.x, food.y, { type: 'food', index, entity: food }));
+    });
+    map.massFood.data.forEach((mass, index) => {
+        if (mass) entityQuadTree.insert(new (require('./lib/quadtree')).Point(mass.x, mass.y, { type: 'massFood', index, entity: mass }));
+    });
+    map.viruses.data.forEach((virus, index) => {
+        if (virus) entityQuadTree.insert(new (require('./lib/quadtree')).Point(virus.x, virus.y, { type: 'virus', index, entity: virus }));
+    });
 
     const isEntityInsideCircle = (point, circle) => {
         return SAT.pointInCircle(new Vector(point.x, point.y), circle);
@@ -232,7 +247,6 @@ const tickPlayer = (currentPlayer) => {
             if (cell.mass > mass.mass * 1.1)
                 return true;
         }
-
         return false;
     };
 
@@ -241,27 +255,55 @@ const tickPlayer = (currentPlayer) => {
     }
 
     const cellsToSplit = [];
+    const eatenFoodIndexes = [];
+    const eatenMassIndexes = [];
+    const eatenVirusIndexes = [];
+
     for (let cellIndex = 0; cellIndex < currentPlayer.cells.length; cellIndex++) {
         const currentCell = currentPlayer.cells[cellIndex];
-
         const cellCircle = currentCell.toCircle();
-
-        const eatenFoodIndexes = util.getIndexes(map.food.data, food => isEntityInsideCircle(food, cellCircle));
-        const eatenMassIndexes = util.getIndexes(map.massFood.data, mass => canEatMass(currentCell, cellCircle, cellIndex, mass));
-        const eatenVirusIndexes = util.getIndexes(map.viruses.data, virus => canEatVirus(currentCell, cellCircle, virus));
-
-        if (eatenVirusIndexes.length > 0) {
-            cellsToSplit.push(cellIndex);
-            map.viruses.delete(eatenVirusIndexes)
+        
+        // HIGH-PERFORMANCE: Query only nearby entities using spatial partitioning
+        const searchRadius = currentCell.radius + 20; // Collision detection radius
+        const nearbyEntities = entityQuadTree.queryCircle(currentCell, searchRadius);
+        
+        let massGained = 0;
+        
+        for (let nearbyPoint of nearbyEntities) {
+            const { type, index, entity } = nearbyPoint.userData;
+            
+            switch (type) {
+                case 'food':
+                    if (isEntityInsideCircle(entity, cellCircle)) {
+                        eatenFoodIndexes.push(index);
+                        massGained += config.foodMass;
+                    }
+                    break;
+                    
+                case 'massFood':
+                    if (canEatMass(currentCell, cellCircle, cellIndex, entity)) {
+                        eatenMassIndexes.push(index);
+                        massGained += entity.mass;
+                    }
+                    break;
+                    
+                case 'virus':
+                    if (canEatVirus(currentCell, cellCircle, entity)) {
+                        eatenVirusIndexes.push(index);
+                        cellsToSplit.push(cellIndex);
+                    }
+                    break;
+            }
         }
-
-        let massGained = eatenMassIndexes.reduce((acc, index) => acc + map.massFood.data[index].mass, 0);
-
-        map.food.delete(eatenFoodIndexes);
-        map.massFood.remove(eatenMassIndexes);
-        massGained += (eatenFoodIndexes.length * config.foodMass);
+        
         currentPlayer.changeCellMass(cellIndex, massGained);
     }
+    
+    // Batch entity removals
+    if (eatenFoodIndexes.length > 0) map.food.delete(eatenFoodIndexes);
+    if (eatenMassIndexes.length > 0) map.massFood.remove(eatenMassIndexes);
+    if (eatenVirusIndexes.length > 0) map.viruses.delete(eatenVirusIndexes);
+    
     currentPlayer.virusSplit(cellsToSplit, config.limitSplit, config.defaultPlayerMass);
 };
 
@@ -311,16 +353,64 @@ const gameloop = () => {
     map.balanceMass(config.foodMass, config.gameMass, config.maxFood, config.maxVirus);
 };
 
+// HIGH-PERFORMANCE: Batch network updates to prevent event loop lag
+let updateBatch = [];
+let batchTimeout = null;
+
 const sendUpdates = () => {
     spectators.forEach(updateSpectator);
+    
+    // Collect all updates into a batch
     map.enumerateWhatPlayersSee(function (playerData, visiblePlayers, visibleFood, visibleMass, visibleViruses) {
-        sockets[playerData.id].emit('serverTellPlayerMove', playerData, visiblePlayers, visibleFood, visibleMass, visibleViruses);
-        if (leaderboardChanged) {
-            sendLeaderboard(sockets[playerData.id]);
-        }
+        updateBatch.push({
+            socketId: playerData.id,
+            data: [playerData, visiblePlayers, visibleFood, visibleMass, visibleViruses],
+            needsLeaderboard: leaderboardChanged
+        });
     });
 
+    // Process batch with setImmediate to prevent event loop blocking
+    if (!batchTimeout) {
+        batchTimeout = setImmediate(() => {
+            processBatchedUpdates();
+            batchTimeout = null;
+        });
+    }
+
     leaderboardChanged = false;
+};
+
+const processBatchedUpdates = () => {
+    const BATCH_SIZE = 10; // Process in chunks to prevent lag
+    let processed = 0;
+    
+    const processBatch = () => {
+        const endIndex = Math.min(processed + BATCH_SIZE, updateBatch.length);
+        
+        for (let i = processed; i < endIndex; i++) {
+            const update = updateBatch[i];
+            const socket = sockets[update.socketId];
+            
+            if (socket && socket.connected) {
+                socket.emit('serverTellPlayerMove', ...update.data);
+                if (update.needsLeaderboard) {
+                    sendLeaderboard(socket);
+                }
+            }
+        }
+        
+        processed = endIndex;
+        
+        if (processed < updateBatch.length) {
+            // Use setImmediate to yield control back to event loop
+            setImmediate(processBatch);
+        } else {
+            // Batch complete, reset for next frame
+            updateBatch = [];
+        }
+    };
+    
+    processBatch();
 };
 
 const sendLeaderboard = (socket) => {

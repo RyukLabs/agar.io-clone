@@ -25,7 +25,7 @@ module.exports = {
     maxVirus: 50,
     slowBase: 4.5,
     logChat: 0,
-    networkUpdateFactor: 40,
+    networkUpdateFactor: 20, // Reduced from 40 to 20 FPS for better performance
     maxHeartbeatInterval: 600000,
     foodUniformDisposition: true,
     newPlayerInitialPosition: "farthest",
