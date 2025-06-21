@@ -3,6 +3,7 @@ var render = require('./render');
 var ChatClient = require('./chat-client');
 var Canvas = require('./canvas');
 var global = require('./global');
+var msgpack = require('msgpack-lite');
 
 var playerNameInput = document.getElementById('playerNameInput');
 var socket;
@@ -155,6 +156,35 @@ function handleDisconnect() {
     }
 }
 
+// Add entity state tracking
+var entityStates = {
+    players: {},
+    food: {},
+    mass: {},
+    viruses: {}
+};
+
+// Helper function to apply delta updates
+const applyDelta = (currentState, delta, entityType) => {
+    // Add new entities
+    delta.added.forEach(item => {
+        currentState[item.id] = item.data;
+    });
+    
+    // Update existing entities
+    delta.updated.forEach(item => {
+        currentState[item.id] = item.data;
+    });
+    
+    // Remove deleted entities
+    delta.removed.forEach(entityId => {
+        delete currentState[entityId];
+    });
+    
+    // Convert back to array format for rendering
+    return Object.values(currentState);
+};
+
 // socket stuff.
 function setupSocket(socket) {
     // Handle ping.
@@ -237,18 +267,47 @@ function setupSocket(socket) {
     });
 
     // Handle movement.
-    socket.on('serverTellPlayerMove', function (playerData, userData, foodsList, massList, virusList) {
-        if (global.playerType == 'player') {
-            player.x = playerData.x;
-            player.y = playerData.y;
-            player.hue = playerData.hue;
-            player.massTotal = playerData.massTotal;
-            player.cells = playerData.cells;
+    socket.on('serverTellPlayerMove', function (encoded) {
+        try {
+            // encoded is a Buffer/Uint8Array containing msgpack data
+            const data = msgpack.decode(new Uint8Array(encoded));
+            
+            // Handle new delta format
+            if (data.deltas) {
+                const { player: playerData, deltas } = data;
+                
+                if (global.playerType == 'player') {
+                    player.x = playerData.x;
+                    player.y = playerData.y;
+                    player.hue = playerData.hue;
+                    player.massTotal = playerData.massTotal;
+                    player.cells = playerData.cells;
+                }
+                
+                // Apply delta updates to maintain entity state
+                users = applyDelta(entityStates.players, deltas.players, 'players');
+                foods = applyDelta(entityStates.food, deltas.food, 'food');
+                fireFood = applyDelta(entityStates.mass, deltas.mass, 'mass');
+                viruses = applyDelta(entityStates.viruses, deltas.viruses, 'viruses');
+            } else {
+                // Fallback for old format (backward compatibility)
+                const [playerData, userData, foodsList, massList, virusList] = data;
+                if (global.playerType == 'player') {
+                    player.x = playerData.x;
+                    player.y = playerData.y;
+                    player.hue = playerData.hue;
+                    player.massTotal = playerData.massTotal;
+                    player.cells = playerData.cells;
+                }
+                users = userData;
+                foods = foodsList;
+                viruses = virusList;
+                fireFood = massList;
+            }
+        } catch (error) {
+            console.error('Error decoding game state:', error);
+            // Fallback to prevent game crash
         }
-        users = userData;
-        foods = foodsList;
-        viruses = virusList;
-        fireFood = massList;
     });
 
     // Death.

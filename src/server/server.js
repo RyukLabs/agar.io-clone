@@ -6,6 +6,7 @@ const app = express();
 const http = require('http').Server(app);
 const io = require('socket.io')(http);
 const SAT = require('sat');
+const msgpack = require('msgpack-lite');
 
 const gameLogic = require('./game-logic');
 const loggingRepositry = require('./repositories/logging-repository');
@@ -25,6 +26,9 @@ let leaderboard = [];
 let leaderboardChanged = false;
 
 const Vector = SAT.Vector;
+
+let playerStates = {}; // Track what each player has seen
+let entityVersions = {}; // Track entity change versions
 
 app.use(express.static(__dirname + '/../client'));
 
@@ -73,6 +77,9 @@ const addPlayer = (socket) => {
             map.players.pushNew(currentPlayer);
             io.emit('playerJoin', { name: currentPlayer.name });
             console.log('Total players: ' + map.players.data.length);
+            
+            // Initialize player state tracking
+            playerStates[socket.id] = { entities: {}, lastUpdate: 0 };
         }
 
     });
@@ -99,6 +106,9 @@ const addPlayer = (socket) => {
         map.players.removePlayerByID(currentPlayer.id);
         console.log('[INFO] User ' + currentPlayer.name + ' has disconnected');
         socket.broadcast.emit('playerDisconnect', { name: currentPlayer.name });
+        
+        // Clean up player state tracking
+        delete playerStates[currentPlayer.id];
     });
 
     socket.on('playerChat', (data) => {
@@ -196,7 +206,7 @@ const addPlayer = (socket) => {
     socket.on('2', () => {
         currentPlayer.userSplit(config.limitSplit, config.defaultPlayerMass);
     });
-}
+};
 
 const addSpectator = (socket) => {
     socket.on('gotit', function () {
@@ -309,10 +319,119 @@ const gameloop = () => {
     map.balanceMass(config.foodMass, config.gameMass, config.maxFood, config.maxVirus);
 };
 
+const getDeltaUpdate = (playerId, currentEntities, entityType) => {
+    if (!playerStates[playerId]) {
+        playerStates[playerId] = { entities: {}, lastUpdate: 0 };
+    }
+    
+    const playerState = playerStates[playerId];
+    const lastSeen = playerState.entities[entityType] || {};
+    const changes = {
+        added: [],
+        updated: [],
+        removed: []
+    };
+    
+    // Find added/updated entities
+    currentEntities.forEach((entity, index) => {
+        const entityId = entity.id || `${entityType}_${index}`;
+        const lastVersion = lastSeen[entityId];
+        const currentVersion = entity.lastModified || Date.now();
+        
+        if (!lastVersion) {
+            changes.added.push({ id: entityId, data: entity });
+        } else if (currentVersion > lastVersion) {
+            changes.updated.push({ id: entityId, data: entity });
+        }
+        
+        lastSeen[entityId] = currentVersion;
+    });
+    
+    // Find removed entities
+    Object.keys(lastSeen).forEach(entityId => {
+        const stillExists = currentEntities.some(e => (e.id || `${entityType}_${currentEntities.indexOf(e)}`) === entityId);
+        if (!stillExists) {
+            changes.removed.push(entityId);
+            delete lastSeen[entityId];
+        }
+    });
+    
+    playerState.entities[entityType] = lastSeen;
+    return changes;
+};
+
+const compressPlayerData = (playerData) => {
+    return {
+        x: Math.round(playerData.x),
+        y: Math.round(playerData.y),
+        cells: playerData.cells.map(cell => ({
+            x: Math.round(cell.x),
+            y: Math.round(cell.y),
+            mass: Math.round(cell.mass),
+            radius: Math.round(cell.radius)
+        })),
+        hue: playerData.hue,
+        name: playerData.name
+    };
+};
+
+    // Add viewport culling function
+const getEntitiesInViewport = (playerData, entities, bufferMultiplier = 1.5) => {
+    const viewportWidth = playerData.screenWidth || 1920;
+    const viewportHeight = playerData.screenHeight || 1080;
+    
+    // Calculate view bounds with buffer
+    const buffer = Math.max(viewportWidth, viewportHeight) * bufferMultiplier;
+    const minX = playerData.x - viewportWidth/2 - buffer;
+    const maxX = playerData.x + viewportWidth/2 + buffer;
+    const minY = playerData.y - viewportHeight/2 - buffer;
+    const maxY = playerData.y + viewportHeight/2 + buffer;
+    
+    return entities.filter(entity => {
+        return entity.x >= minX && entity.x <= maxX && 
+               entity.y >= minY && entity.y <= maxY;
+    });
+};
+
+// Update sendUpdates to use viewport culling
 const sendUpdates = () => {
     spectators.forEach(updateSpectator);
     map.enumerateWhatPlayersSee(function (playerData, visiblePlayers, visibleFood, visibleMass, visibleViruses) {
-        sockets[playerData.id].emit('serverTellPlayerMove', playerData, visiblePlayers, visibleFood, visibleMass, visibleViruses);
+        // Apply viewport culling to reduce data further
+        const culledPlayers = getEntitiesInViewport(playerData, visiblePlayers);
+        const culledFood = getEntitiesInViewport(playerData, visibleFood);
+        const culledMass = getEntitiesInViewport(playerData, visibleMass);
+        const culledViruses = getEntitiesInViewport(playerData, visibleViruses);
+        
+        // Get delta updates for this player
+        const playerDeltas = getDeltaUpdate(playerData.id, culledPlayers, 'players');
+        const foodDeltas = getDeltaUpdate(playerData.id, culledFood, 'food');
+        const massDeltas = getDeltaUpdate(playerData.id, culledMass, 'mass');
+        const virusDeltas = getDeltaUpdate(playerData.id, culledViruses, 'viruses');
+        
+        // Only send if there are actual changes
+        const hasChanges = playerDeltas.added.length || playerDeltas.updated.length || playerDeltas.removed.length ||
+                          foodDeltas.added.length || foodDeltas.updated.length || foodDeltas.removed.length ||
+                          massDeltas.added.length || massDeltas.updated.length || massDeltas.removed.length ||
+                          virusDeltas.added.length || virusDeltas.updated.length || virusDeltas.removed.length;
+        
+        if (hasChanges || !playerStates[playerData.id].lastUpdate) {
+            const compressedData = {
+                player: compressPlayerData(playerData),
+                deltas: {
+                    players: playerDeltas,
+                    food: foodDeltas,
+                    mass: massDeltas,
+                    viruses: virusDeltas
+                },
+                timestamp: Date.now()
+            };
+            
+            const payload = msgpack.encode(compressedData);
+            sockets[playerData.id].emit('serverTellPlayerMove', payload);
+            playerStates[playerData.id].lastUpdate = Date.now();
+        }
+        
         if (leaderboardChanged) {
             sendLeaderboard(sockets[playerData.id]);
         }
@@ -337,7 +456,8 @@ const updateSpectator = (socketID) => {
         id: socketID,
         name: ''
     };
-    sockets[socketID].emit('serverTellPlayerMove', playerData, map.players.data, map.food.data, map.massFood.data, map.viruses.data);
+    const payload = msgpack.encode([playerData, map.players.data, map.food.data, map.massFood.data, map.viruses.data]);
+    sockets[socketID].emit('serverTellPlayerMove', payload);
     if (leaderboardChanged) {
         sendLeaderboard(sockets[socketID]);
     }
